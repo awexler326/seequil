@@ -57,7 +57,16 @@ Every picture also has redraw, save, copy-prompt and upload buttons.
 
 **Memory and prompts use:** OpenAI (cheapest) or Claude.
 
-## 6. Backups and other devices
+## 6. Full cast (character voices)
+
+**Settings → Full cast** gives each character their own voice when Seequil reads aloud. The narrator keeps the voice you picked.
+
+- Your OpenAI (or Anthropic) key works out who says each quote. This costs a fraction of a cent per page, is saved, and only happens once per page.
+- Voices come from your browser. **Microsoft Edge has the best free ones** (names ending in "Online (Natural)").
+- To change a character's voice or pitch, tap their name in the text to open their memory card, then use **Voice**. **Hear it** plays a sample.
+- If a line goes to the wrong character, select some of the quote and tap **Speaker** in the bar that appears.
+
+## 7. Backups and other devices
 
 Books live in **this browser on this device**. Your phone and your computer each keep their own library.
 
@@ -65,7 +74,7 @@ Books live in **this browser on this device**. Your phone and your computer each
 - **Restore a backup** loads that file on another device or browser.
 - Clearing your browser's site data deletes the library, so back up now and then.
 
-## 7. If something stops working
+## 8. If something stops working
 
 - **"didn't accept your API key":** re-copy the key into Settings.
 - **"out of credit or hit its spending limit":** add credits on the provider's billing page.

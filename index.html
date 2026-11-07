@@ -237,7 +237,7 @@ const svgI = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`
 let db = null, uid = null, downloads = null;
 let activePart = null; const partArt = new Map();
 const DEFAULT_STYLE = 'painterly digital illustration, soft atmospheric light, cohesive muted palette, composition framed to fill the whole image';
-let settings = {ai:false, fs:19, rate:1, voice:'', style: DEFAULT_STYLE, picSource:'openai', picQuality:'low', picMode:'tap', imgFit:'contain', picGen:true, textProvider:'openai', oaKey:'', anKey:'', budget:3, spend:{},
+let settings = {ai:false, fs:19, rate:1, voice:'', style: DEFAULT_STYLE, picSource:'openai', picQuality:'low', picMode:'tap', imgFit:'contain', picGen:true, castOn:true, textProvider:'openai', oaKey:'', anKey:'', budget:3, spend:{},
   oaText:'gpt-6-luna', oaImage:'gpt-image-2.5-flare', anModel:'claude-sonnet-5-5', anQuick:'claude-haiku-5-5', costLow:0.007, costMed:0.014, oaIn:0.1, oaOut:0.5, anIn:3, anOut:15};
 let book = null, P = 1;
 let aiBlocked = false, backoffUntil = 0;
@@ -446,7 +446,7 @@ async function deleteBook(id){
   if (!db){ book = null; renderLibrary(); return; }
   const ref = userCol().doc('book_' + id);
   try {
-    for (const sub of ['pages','codex','art','hl','parts']){
+    for (const sub of ['pages','codex','art','hl','parts','cast']){
       const s = await ref.collection(sub).get();
       for (const d of s.docs) await ref.collection(sub).doc(d.id).delete();
     }
@@ -481,7 +481,7 @@ async function importFile(file){
   } finally { importing = false; }
 }
 async function saveNewBook({id, title, pages}, st){
-  book = {id, title, numPages: pages.length, page: 1, pages, codex: new Map(), entities: [], hl: [], parts: []};
+  book = {id, title, numPages: pages.length, page: 1, voices: {}, genders: {}, pages, codex: new Map(), entities: [], hl: [], parts: []};
   if (db){
     for (let g = 0; g * GROUP < pages.length; g++){
       st.textContent = `Saving… ${Math.min((g+1)*GROUP, pages.length)} of ${pages.length} pages`;
@@ -634,7 +634,7 @@ async function openBook(id){
     const m = meta.data();
     const pages = [];
     pg.docs.map(d => d.data()).sort((a,b)=>a.g-b.g).forEach(g => (g.pages||[]).forEach(p => pages.push(p.paras || [])));
-    book = {id, title: m.title, numPages: m.numPages, page: m.page || 1, pages, codex: new Map(), entities: [], hl: hl.docs.map(d => d.data()), parts: pt.docs.map(d => ({...d.data()}))};
+    book = {id, title: m.title, numPages: m.numPages, page: m.page || 1, voices: m.voices || {}, genders: m.genders || {}, pages, codex: new Map(), entities: [], hl: hl.docs.map(d => d.data()), parts: pt.docs.map(d => ({...d.data()}))};
     cx.docs.forEach(d => { const c = d.data(); book.codex.set(c.idx, c); });
     rebuildEntities();
     st.textContent = '';
@@ -644,7 +644,7 @@ async function openBook(id){
 
 function enterReader(page){
   artCache.forEach(a => a.url && URL.revokeObjectURL(a.url)); artCache.clear(); artQueue.length = 0;
-  partArt.forEach(a => a.url && URL.revokeObjectURL(a.url)); partArt.clear(); activePart = null;
+  partArt.forEach(a => a.url && URL.revokeObjectURL(a.url)); partArt.clear(); activePart = null; castCache.clear();
   if (!book.parts) book.parts = [];
   book.parts.forEach(p => { if (p.img || p.svg) setPartArt(p.id, p.svg, p.img); });
   $('#library').hidden = true; $('#reader').hidden = false;
@@ -671,6 +671,7 @@ function goPage(n, keepTts){
   $('#textpane').scrollTop = 0;
   saveProgress();
   renderScene(); requestArt(P, true);
+  if (settings.castOn){ ensureCast(P).then(() => ensureCast(P + 1)); }
   ensureCodex();
 }
 $('#prevPg').onclick = () => goPage(P - 1);
@@ -715,15 +716,16 @@ function entityMatcher(ents){
 }
 function renderText(){
   const wrap = $('#pageText'); wrap.textContent = '';
-  pageSents = [];
+  pageSents = []; pageQuotes = settings.castOn ? quotesWithSpeakers(P) : [];
   const paras = book.pages[P-1] || [];
   if (!paras.length){ wrap.innerHTML = '<p class="empty-page">No text on this page.</p>'; return; }
   const em = entityMatcher(visibleEntities());
   const hls = book.hl.filter(h => h.page === P);
   paras.forEach((text, pi) => {
     const p = document.createElement('p');
-    const sents = splitSentences(text), base = pageSents.length;
-    sents.forEach(s => pageSents.push({p: pi, s: s.s, e: s.e, text: text.slice(s.s, s.e).trim()}));
+    const pq = settings.castOn ? pageQuotes.filter(q => q.p === pi) : [];
+    const sents = splitPieces(text, pq), base = pageSents.length;
+    sents.forEach(s => pageSents.push({p: pi, s: s.s, e: s.e, text: text.slice(s.s, s.e).trim(), speaker: s.speaker || null}));
     const ents = [];
     if (em){ em.rx.lastIndex = 0; let m; while ((m = em.rx.exec(text))) ents.push({s: m.index, e: m.index + m[0].length, id: em.map.get(m[0])}); }
     const ph = hls.filter(h => h.para === pi);
@@ -795,13 +797,14 @@ document.addEventListener('selectionchange', debounce(() => {
   if (got) showSelBar({mode:'new', ranges: got.ranges}, got.rect);
   else if (selCtx && selCtx.mode === 'new') hideSel();
 }, 250));
+function quoteAt(ctx){ if (!settings.castOn || !ctx || ctx.mode !== 'new') return null; const r = ctx.ranges[0]; return pageQuotes.find(q => q.p === r.para && r.s >= q.s && r.s < q.e) || null; }
 function showSelBar(ctx, rect){
   selCtx = ctx;
   const bar = $('#selBar');
   const cur = ctx.mode === 'edit' ? ctx.hl.color : null;
   bar.innerHTML = Object.entries(HL).map(([k,v]) => `<button class="dot${cur===k?' cur':''}" data-c="${k}" aria-label="${k} highlight"><span style="background:${v}"></span></button>`).join('') +
     `<span class="div"></span><button class="act" data-a="note">${svgI('note')}Note</button><button class="act" data-a="copy">${svgI('copy')}Copy</button>` +
-    (ctx.mode === 'new' ? `<button class="act" data-a="read">${svgI('speak')}Read from here</button><button class="act" data-a="part">${svgI('image')}Picture this</button>` : `<button class="act" data-a="del">${svgI('trash')}Remove</button>`);
+    (ctx.mode === 'new' ? `<button class="act" data-a="read">${svgI('speak')}Read from here</button><button class="act" data-a="part">${svgI('image')}Picture this</button>${quoteAt(ctx) ? `<button class="act" data-a="who">${svgI('speak')}Speaker: ${esc(quoteAt(ctx).speaker && !CAST_SKIP.test(quoteAt(ctx).speaker) ? quoteAt(ctx).speaker : 'set')}</button>` : ''}` : `<button class="act" data-a="del">${svgI('trash')}Remove</button>`);
   bar.hidden = false;
   const bw = bar.offsetWidth, bh = bar.offsetHeight;
   const coarse = matchMedia('(pointer:coarse)').matches;
@@ -826,6 +829,7 @@ $('#selBar').addEventListener('click', async e => {
   if (a === 'copy'){ try { await navigator.clipboard.writeText(text); toast('Copied'); } catch(err){ toast('Couldn’t copy'); } hideSel(); }
   else if (a === 'read'){ const r = ctx.ranges[0]; const idx = pageSents.findIndex(s => s.p === r.para && r.s >= s.s && r.s < s.e); window.getSelection().removeAllRanges(); hideSel(); startTts(Math.max(0, idx)); }
   else if (a === 'del'){ await removeHl(ctx.hl); hideSel(); renderText(); }
+  else if (a === 'who'){ const q = quoteAt(ctx); window.getSelection().removeAllRanges(); hideSel(); if (q) speakerDialog(q); }
   else if (a === 'part'){ window.getSelection().removeAllRanges(); hideSel(); createPart(ctx.ranges); }
   else if (a === 'note'){
     let hl = ctx.hl;
@@ -898,6 +902,7 @@ $('#setBtn').onclick = () => {
     <div class="field"><label>Text size</label><div class="seg"><button class="btn" id="fsDn" aria-label="Smaller text">A−</button><button class="btn" id="fsUp" aria-label="Larger text">A+</button><span class="muted" id="fsV" style="align-self:center">${settings.fs}px</span></div></div>
     <div class="field"><label for="voiceSel">Read-aloud voice</label><select id="voiceSel">${vOpts}</select></div>
     <h3 class="h3">Pictures and memory</h3>
+    <div class="field"><label class="switch"><input type="checkbox" id="castTog"${settings.castOn?' checked':''}> Full cast: give each character their own voice</label><div class="muted" style="font-size:14px">Your OpenAI or Anthropic key works out who is speaking (a fraction of a cent per page, saved once). Sounds best in Microsoft Edge. This browser has ${voicePool().length} voice${voicePool().length === 1 ? '' : 's'} to cast from. Change any character’s voice on their memory card.</div></div>
     <div class="field"><label class="switch"><input type="checkbox" id="aiTog"${settings.ai?' checked':''}> Turn on pictures and memory</label></div>
     <div class="field"><label for="picSrc">Pictures come from</label><select id="picSrc">
       <option value="openai"${sel('openai', settings.picSource)}>ChatGPT images (OpenAI key)</option>
@@ -942,6 +947,7 @@ $('#setBtn').onclick = () => {
   const setFs = d => { settings.fs = Math.max(14, Math.min(28, settings.fs + d)); $('#fsV').textContent = settings.fs + 'px'; applySettings(); saveSettings(); };
   $('#fsDn').onclick = () => setFs(-1); $('#fsUp').onclick = () => setFs(1);
   $('#voiceSel').onchange = e => { settings.voice = e.target.value; saveSettings(); };
+  $('#castTog').onchange = e => { settings.castOn = e.target.checked; saveSettings(); if (book){ if (settings.castOn){ ensureCast(P); ensureCast(P + 1); } renderText(); } };
   $('#aiTog').onchange = e => { if (e.target.checked){ settings.ai = true; aiBlocked = false; saveSettings(); if (book){ renderScene(); requestArt(P, true, true); ensureCodex(); } } else { settings.ai = false; saveSettings(); renderScene(); } };
 };
 if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = () => {};
@@ -974,8 +980,10 @@ function speak(i){
   tts.i = i; const sent = pageSents[i];
   const u = new SpeechSynthesisUtterance(sent.text);
   u.rate = settings.rate;
-  const v = settings.voice && speechSynthesis.getVoices().find(x => x.voiceURI === settings.voice); if (v) u.voice = v;
-  u.onstart = () => { if (g === tts.gen) markSent(i); };
+  const cv = settings.castOn && sent.speaker ? voiceFor(sent.speaker) : null;
+  if (cv && cv.voice){ u.voice = cv.voice; u.pitch = cv.pitch; }
+  else { const v = settings.voice && speechSynthesis.getVoices().find(x => x.voiceURI === settings.voice); if (v) u.voice = v; }
+  u.onstart = () => { if (g === tts.gen){ markSent(i); $('#ttsLbl').textContent = cv && cv.voice ? 'Reading aloud · ' + sent.speaker : 'Reading aloud · narrator'; } };
   u.onboundary = e => { if (g === tts.gen && e.name !== 'sentence') markWord(sent, e.charIndex); };
   u.onend = () => { if (g === tts.gen && tts.on) speak(i + 1); };
   u.onerror = e => { if (g === tts.gen && e.error !== 'interrupted' && e.error !== 'canceled'){ stopTts(); toast('Read-aloud stopped: ' + e.error); } };
@@ -1568,6 +1576,115 @@ $('#memBtn').onclick = () => {
   $('#entQ').oninput = e => draw(e.target.value.trim().toLowerCase());
 };
 
+/* ---------- full cast: a voice for each character ---------- */
+const castCache = new Map(); const castBusy = new Set();
+let pageQuotes = [];
+const CAST_SKIP = /^(narrator|unknown|none)$/i;
+function findQuotes(paras){
+  const out = [];
+  paras.forEach((t, pi) => { const rx = /[“"]([^”"]{1,900})[”"]/g; let m; while ((m = rx.exec(t))){ if (m[1].trim().length < 2) continue; out.push({p: pi, s: m.index, e: m.index + m[0].length, text: m[0]}); } });
+  return out;
+}
+function resolveName(n){
+  const k = String(n || '').trim().toLowerCase(); if (!k) return '';
+  const en = book.entities.find(x => x.name.toLowerCase() === k || [...x.aliases].some(a => a.toLowerCase() === k));
+  return en ? en.name : String(n).trim();
+}
+function quotesWithSpeakers(page){
+  const qs = findQuotes(book.pages[page - 1] || []);
+  const doc = castCache.get(page); if (!doc) return qs.map(q => ({...q, speaker: null}));
+  return qs.map(q => ({...q, speaker: (doc.map || {})[q.p + ':' + q.s] || null}));
+}
+function splitPieces(text, quotes){
+  const base = splitSentences(text); if (!quotes.length) return base;
+  const cuts = new Set([0, text.length]); base.forEach(r => { cuts.add(r.s); cuts.add(r.e); }); quotes.forEach(q => { cuts.add(q.s); cuts.add(q.e); });
+  const pts = [...cuts].sort((a, b) => a - b); const out = [];
+  for (let i = 0; i < pts.length - 1; i++){ if (pts[i + 1] > pts[i]){ const q = quotes.find(q => pts[i] >= q.s && pts[i + 1] <= q.e); out.push({s: pts[i], e: pts[i + 1], speaker: q && q.speaker && !CAST_SKIP.test(q.speaker) ? q.speaker : null}); } }
+  return out;
+}
+async function ensureCast(page){
+  if (!book || !settings.castOn || page < 1 || page > book.numPages || castCache.has(page) || castBusy.has(page)) return;
+  const bid = book.id; castBusy.add(page);
+  try {
+    let doc = null;
+    if (db){ try { const s = await bref().collection('cast').doc('p' + page).get(); if (s.exists) doc = s.data(); } catch(e){} }
+    if (!doc){
+      const paras = book.pages[page - 1] || []; const qs = findQuotes(paras);
+      if (!qs.length) doc = {page, map: {}};
+      else {
+        if (!textReady() || Date.now() < backoffUntil) return;
+        let marked = '';
+        paras.forEach((t, pi) => { let out = '', last = 0; qs.forEach((q, i) => { if (q.p !== pi) return; out += t.slice(last, q.s) + `[Q${i + 1}]` + t.slice(q.s, q.e); last = q.e; }); marked += out + t.slice(last) + '\n\n'; });
+        const known = book.entities.filter(en => en.type === 'character' && en.firstPage <= page).slice(0, 60)
+          .map(en => `- ${en.name}${en.aliases.size ? ' (also: ' + [...en.aliases].join(', ') + ')' : ''}${en.description ? ': ' + en.description : ''}`).join('\n') || '(none yet)';
+        const r = await callText(`You are tagging dialogue for an audiobook of "${book.title}". Every quotation on this page is marked [Q1], [Q2] and so on just before it. Say who speaks each one.
+- When the speaker is one of the KNOWN CHARACTERS, use that exact name (match nicknames, surnames and titles to them).
+- If it's clearly a new named character, give the name as the text writes it. For an unnamed speaker, give a short label such as "the old man".
+- If the quote isn't spoken dialogue (a sign, a title, a quoted word or phrase), use "narrator". If you can't tell, use "unknown".
+- Use only this page and the list. Nothing from later in the book.
+- Also give each speaker's gender when the text or list makes it clear: male, female or unknown.
+Reply with JSON only, no fences: {"speakers":{"Q1":"Name"},"genders":{"Name":"female"}}
+
+KNOWN CHARACTERS:
+${known}
+
+PAGE ${page}:
+${marked.slice(0, 9000)}`, {modelTier: 'quick'});
+        const t = (r && r.text) || ''; const a = t.indexOf('{'), b = t.lastIndexOf('}');
+        let j = {}; try { j = JSON.parse(t.slice(a, b + 1)); } catch(e){ return; }
+        const map = {}, genders = {};
+        qs.forEach((q, i) => { const n = j.speakers && j.speakers['Q' + (i + 1)]; if (n) map[q.p + ':' + q.s] = CAST_SKIP.test(String(n)) ? String(n).toLowerCase() : resolveName(n); });
+        Object.entries(j.genders || {}).forEach(([n, g]) => { if (/^(male|female)$/i.test(g)) genders[resolveName(n)] = g.toLowerCase(); });
+        doc = {page, map, genders};
+        if (db) try { await bref().collection('cast').doc('p' + page).set(doc); } catch(e){}
+      }
+    }
+    if (!book || book.id !== bid) return;
+    castCache.set(page, doc);
+    let changed = false;
+    Object.entries(doc.genders || {}).forEach(([n, g]) => { if (!book.genders[n]){ book.genders[n] = g; changed = true; } });
+    if (changed) saveVoices();
+    if (page === P && !tts.on) renderText();
+  } catch(e){ aiError(e); }
+  finally { castBusy.delete(page); }
+}
+/* voices */
+const FEMALE_V = /\b(ava|emma|jenny|aria|michelle|ana|sonia|libby|maisie|natasha|clara|sara|nancy|jane|amber|ashley|cora|elizabeth|monica|samantha|karen|moira|tessa|fiona|victoria|zira|susan|hazel|catherine|linda|heather|emily|olivia|sophie|isabella|serena|allison|joanna|kendra|kimberly|salli|ivy|ruth|leah|molly|hayley|evelyn|jessa|nova|ellie|aubrey|abbi|bella|hollie|maya|ada|sienna)\b/i;
+const MALE_V = /\b(andrew|brian|guy|christopher|eric|roger|steffan|davis|tony|jason|ryan|thomas|william|liam|mitchell|daniel|fred|alex|aaron|arthur|george|oliver|james|david|mark|richard|paul|matthew|joey|justin|kevin|stephen|russell|ralph|albert|bruce|connor|elliot|ethan|noah|reed|rocko|eddy|lewis|brandon|derek|dustin|adam|alfie|ollie|ethan|noah|wayne|neil|tim)\b/i;
+function voiceGender(v){ const n = v.name; if (/female/i.test(n)) return 'female'; if (/\bmale\b/i.test(n)) return 'male'; return FEMALE_V.test(n) ? 'female' : MALE_V.test(n) ? 'male' : 'unknown'; }
+function englishVoices(){ const vs = ('speechSynthesis' in window) ? speechSynthesis.getVoices() : []; const en = vs.filter(v => /^en/i.test(v.lang)); return en.length ? en : vs; }
+function voicePool(){ const en = englishVoices(); const nat = en.filter(v => /natural|online|neural|premium|enhanced/i.test(v.name)); return nat.length >= 3 ? nat : en; }
+const saveVoices = debounce(async () => { if (db && book) try { await bref().update({voices: book.voices, genders: book.genders}); } catch(e){} }, 800);
+function voiceFor(name){
+  if (!book.voices[name] || !speechSynthesis.getVoices().some(v => v.voiceURI === book.voices[name].voice)){
+    const pool = voicePool().filter(v => v.voiceURI !== settings.voice); if (!pool.length) return null;
+    const g = book.genders[name] || 'unknown';
+    const fit = pool.filter(v => g === 'unknown' || voiceGender(v) === g); const cands = fit.length ? fit : pool;
+    const used = {}; Object.values(book.voices).forEach(x => { used[x.voice] = (used[x.voice] || 0) + 1; });
+    const pick = cands.slice().sort((a, b) => (used[a.voiceURI] || 0) - (used[b.voiceURI] || 0))[0];
+    const n = used[pick.voiceURI] || 0;
+    book.voices[name] = {voice: pick.voiceURI, pitch: [1, 0.85, 1.15, 0.75, 1.25][n % 5]};
+    saveVoices();
+  }
+  const set = book.voices[name];
+  return {voice: speechSynthesis.getVoices().find(v => v.voiceURI === set.voice), pitch: set.pitch || 1};
+}
+function speakerDialog(q){
+  const chars = [...new Set([...book.entities.filter(en => en.type === 'character' && en.firstPage <= P).map(en => en.name), ...Object.keys(book.voices)])].sort((a, b) => a.localeCompare(b));
+  const ov = $('#overlay');
+  ov.innerHTML = `<div class="scrim" data-close></div><div class="modal" role="dialog" aria-modal="true" aria-labelledby="spT"><b id="spT">Who says this?</b><div class="muted" style="font-family:Literata,serif">${esc(q.text.length > 140 ? q.text.slice(0, 140) + '…' : q.text)}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;max-height:40vh;overflow:auto">${chars.map(c => `<button class="btn small" data-who="${esc(c)}"${c === q.speaker ? ' style="border-color:#1F5E8C;color:#1F5E8C"' : ''}>${esc(c)}</button>`).join('')}<button class="btn small" data-who="narrator">Narrator</button></div>
+    <label for="spNew" class="muted" style="font-size:13px">Someone else</label><input class="search" id="spNew" placeholder="Type a name"><div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="spOk">Save</button></div></div>`;
+  ov.querySelectorAll('[data-close]').forEach(x => x.onclick = closeOverlay);
+  const save = async name => {
+    const doc = castCache.get(P) || {page: P, map: {}}; doc.map = {...(doc.map || {}), [q.p + ':' + q.s]: name === 'narrator' ? 'narrator' : resolveName(name)}; doc.fixed = true;
+    castCache.set(P, doc); if (db) try { await bref().collection('cast').doc('p' + P).set(doc); } catch(e){}
+    closeOverlay(); renderText(); toast('Speaker updated');
+  };
+  ov.querySelectorAll('[data-who]').forEach(b => b.onclick = () => save(b.dataset.who));
+  $('#spOk').onclick = () => { const v = $('#spNew').value.trim(); if (v) save(v); };
+}
+
 /* Memory card */
 const recapCache = new Map();
 function openCard(id){
@@ -1582,7 +1699,16 @@ function openCard(id){
     ${en.description && en.descPage <= P ? `<div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">Who or what</h3><p class="desc">${esc(en.description)}</p></div>` : ''}
     <div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">So far</h3><div class="facts">${facts.map(f => `<div class="fact"><button data-pg="${f.page}" aria-label="Go to page ${f.page}">p. ${f.page}</button><span>${esc(f.text)}</span></div>`).join('') || '<span class="muted">No notes yet.</span>'}</div></div>
     ${facts.length >= 3 && aiReady() ? `<div style="display:flex;flex-direction:column;gap:8px"><button class="btn" id="recapBtn" style="align-self:flex-start">Catch me up</button><p class="desc" id="recapT" hidden></p></div>` : ''}
+    ${settings.castOn && en.type === 'character' && 'speechSynthesis' in window ? `<div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">Voice</h3><div class="seg" style="flex-wrap:wrap"><select id="cvSel" aria-label="Voice for ${esc(en.name)}" style="height:44px;border:1px solid #E3DED2;border-radius:10px;padding:0 8px;max-width:100%">${englishVoices().map(v => `<option value="${esc(v.voiceURI)}">${esc(v.name.replace(/^Microsoft /, '').replace(/ - .*$/, ''))}</option>`).join('')}</select><select id="cvPitch" aria-label="Pitch" style="height:44px;border:1px solid #E3DED2;border-radius:10px;padding:0 8px"><option value="0.8">Lower</option><option value="1">Normal</option><option value="1.2">Higher</option></select><button class="btn small" id="cvPlay">${svgI('speak').replace('<svg', '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"')}Hear it</button></div></div>` : ''}
     <p class="muted" style="font-size:13px;margin:0">More unlocks as you keep reading.</p>`);
+  if ($('#cvSel')){
+    const cur = voiceFor(en.name); const sel = $('#cvSel'), pit = $('#cvPitch');
+    if (cur && cur.voice) sel.value = cur.voice.voiceURI;
+    const pv = cur ? cur.pitch : 1; pit.value = pv < 0.9 ? '0.8' : pv > 1.1 ? '1.2' : '1';
+    const store = () => { book.voices[en.name] = {voice: sel.value, pitch: Number(pit.value)}; saveVoices(); };
+    sel.onchange = store; pit.onchange = store;
+    $('#cvPlay').onclick = () => { stopTts(); const u = new SpeechSynthesisUtterance(`Hello. I'm ${en.name}.`); const v = speechSynthesis.getVoices().find(x => x.voiceURI === sel.value); if (v) u.voice = v; u.pitch = Number(pit.value); u.rate = settings.rate; speechSynthesis.speak(u); };
+  }
   body.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { closeOverlay(); goPage(+b.dataset.pg); });
   const rb = $('#recapBtn');
   if (rb) rb.onclick = async () => {
