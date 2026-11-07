@@ -64,8 +64,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-v
 .part-mark.on{background:var(--gold);color:var(--ink)}
 .empty-page{color:var(--muted);font-family:Inter,sans-serif;font-size:15px}
 .imagepane{flex:1;position:relative;background:var(--ink);overflow:hidden;display:flex;align-items:center;justify-content:center}
-#sceneImg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .4s}
-#sceneImg.show{opacity:1}
+#sceneImg,#sceneBg{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .4s}
+#sceneBg{object-fit:cover;filter:blur(28px) brightness(.5);transform:scale(1.15)}
+#sceneImg.show,#sceneBg.show{opacity:1}
+.imagepane.fill #sceneImg{object-fit:cover}
+.imagepane.fill #sceneBg{display:none}
 .scene-msg{position:relative;max-width:360px;text-align:center;color:#E9ECF4;padding:24px;display:flex;flex-direction:column;align-items:center;gap:14px;font-size:15px;line-height:1.5}
 .scene-msg h3{margin:0;font-family:Literata,Georgia,serif;font-size:22px;font-weight:600;color:var(--paper)}
 .pill{position:absolute;left:16px;bottom:16px;padding:7px 13px;border-radius:999px;background:rgba(11,14,31,.78);color:var(--paper);font-size:13px;display:flex;align-items:center;gap:8px}
@@ -179,6 +182,7 @@ input[type=range]{width:100%;accent-color:var(--gold);margin:0}
       <div class="page-text" id="pageText"></div>
     </div>
     <div class="imagepane" id="imagepane">
+      <img id="sceneBg" alt="" aria-hidden="true">
       <img id="sceneImg" alt="">
       <div class="scene-msg" id="sceneMsg"></div>
       <div class="pill" id="scenePill" hidden></div>
@@ -231,8 +235,8 @@ const svgI = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`
 
 let db = null, uid = null, downloads = null;
 let activePart = null; const partArt = new Map();
-const DEFAULT_STYLE = 'painterly digital illustration, soft atmospheric light, cohesive muted palette, vertical composition';
-let settings = {ai:false, fs:19, rate:1, voice:'', style: DEFAULT_STYLE, picSource:'openai', picQuality:'low', picMode:'tap', picGen:true, textProvider:'openai', oaKey:'', anKey:'', budget:3, spend:{},
+const DEFAULT_STYLE = 'painterly digital illustration, soft atmospheric light, cohesive muted palette, composition framed to fill the whole image';
+let settings = {ai:false, fs:19, rate:1, voice:'', style: DEFAULT_STYLE, picSource:'openai', picQuality:'low', picMode:'tap', imgFit:'contain', picGen:true, textProvider:'openai', oaKey:'', anKey:'', budget:3, spend:{},
   oaText:'gpt-6-luna', oaImage:'gpt-image-2.5-flare', anModel:'claude-sonnet-5-5', anQuick:'claude-haiku-5-5', costLow:0.007, costMed:0.014, oaIn:0.1, oaOut:0.5, anIn:3, anOut:15};
 let book = null, P = 1;
 let aiBlocked = false, backoffUntil = 0;
@@ -350,7 +354,9 @@ async function callText(prompt, opts = {}){
 async function openaiImage(prompt){
   if (!settings.oaKey) throw {code: 'bad_key', message: 'Add an OpenAI API key in Settings.'};
   checkBudget(picCost());
-  const body = {model: settings.oaImage, prompt: prompt.slice(0, 3800), size: '1024x1536', quality: settings.picQuality, n: 1};
+  const pane = $('#imagepane').getBoundingClientRect(); const ratio = pane.width && pane.height ? pane.width / pane.height : 0.7;
+  const size = ratio > 1.15 ? '1536x1024' : ratio < 0.87 ? '1024x1536' : '1024x1024';
+  const body = {model: settings.oaImage, prompt: prompt.slice(0, 3800), size, quality: settings.picQuality, n: 1};
   if (/^dall-e/i.test(settings.oaImage)){ body.response_format = 'b64_json'; body.size = '1024x1792'; body.quality = settings.picQuality === 'medium' ? 'hd' : 'standard'; }
   let r;
   try { r = await fetch('https://api.openai.com/v1/images/generations', {method: 'POST', headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + settings.oaKey}, body: JSON.stringify(body)}); }
@@ -385,7 +391,7 @@ async function boot(){
   await loadLibrary();
 }
 const saveSettings = debounce(async () => { if (!db) return; try { await userCol().doc('settings').set({...settings}); } catch(e){} }, 600);
-function applySettings(){ document.documentElement.style.setProperty('--fs', settings.fs + 'px'); $('#rateSel').value = String(settings.rate); }
+function applySettings(){ $('#imagepane').classList.toggle('fill', settings.imgFit === 'fill'); document.documentElement.style.setProperty('--fs', settings.fs + 'px'); $('#rateSel').value = String(settings.rate); }
 
 /* ---------- backup & restore ---------- */
 $('#backupBtn').onclick = async () => {
@@ -897,6 +903,7 @@ $('#setBtn').onclick = () => {
       <option value="claude"${sel('claude', settings.picSource)}>Claude drawings (Anthropic key)</option>
       <option value="own"${sel('own', settings.picSource)}>Only my own uploads</option></select></div>
     <div class="field"><label for="picMode">Picture generation</label><select id="picMode"><option value="tap"${settings.picMode !== 'auto' ? ' selected' : ''}>Only generate this page (tap “Draw this page”)</option><option value="auto"${settings.picMode === 'auto' ? ' selected' : ''}>Always generate (every page)</option></select><div class="muted" style="font-size:14px">The same choice, plus an on/off switch, sits at the top left of the picture while you read. Pictures you already have always show.</div></div>
+    <div class="field"><label for="imgFit">Picture fit</label><select id="imgFit"><option value="contain"${settings.imgFit !== 'fill' ? ' selected' : ''}>Show the whole picture</option><option value="fill"${settings.imgFit === 'fill' ? ' selected' : ''}>Fill the space (may crop edges)</option></select></div>
     <div class="field"><label for="picQ">ChatGPT picture quality</label><select id="picQ">
       <option value="low"${sel('low', settings.picQuality)}>Low (about $${Number(settings.costLow).toFixed(3)} each)</option>
       <option value="medium"${sel('medium', settings.picQuality)}>Medium (about $${Number(settings.costMed).toFixed(3)} each)</option></select></div>
@@ -924,7 +931,8 @@ $('#setBtn').onclick = () => {
   const sa = $('#saveAll'); if (sa) sa.onclick = () => saveAllPictures(sa);
   const bind = (id, key, conv) => { const el = $('#' + id); if (el) el.onchange = e => { settings[key] = conv ? conv(e.target.value) : e.target.value.trim(); if (/Key$/.test(key)){ aiBlocked = false; lastKeyMsg = ''; } saveSettings(); renderScene(); if (book){ requestArt(P, true, true); ensureCodex(); } }; };
   const n = v => Math.max(0, Number(v) || 0);
-  bind('picSrc', 'picSource'); bind('picMode', 'picMode'); bind('picQ', 'picQuality'); bind('txtSrc', 'textProvider'); bind('oaKey', 'oaKey'); bind('anKey', 'anKey');
+  bind('picSrc', 'picSource'); bind('picMode', 'picMode');
+  $('#imgFit').addEventListener('change', e => { settings.imgFit = e.target.value; applySettings(); }); bind('picQ', 'picQuality'); bind('txtSrc', 'textProvider'); bind('oaKey', 'oaKey'); bind('anKey', 'anKey');
   bind('budIn', 'budget', n); bind('oaText', 'oaText'); bind('oaImage', 'oaImage'); bind('anModel', 'anModel'); bind('anQuick', 'anQuick');
   ['costLow','costMed','oaIn','oaOut','anIn','anOut'].forEach(k => bind(k, k, n));
   $('#budIn').addEventListener('change', () => { $('#spentV').textContent = spentLine(); });
@@ -1084,10 +1092,11 @@ function knownFor(text, page){
 let shown = null; // {url, svg, name}
 function showImg(entry, alt, name){
   const img = $('#sceneImg');
-  if (img.getAttribute('src') !== entry.url){ img.classList.remove('show'); img.onload = () => img.classList.add('show'); img.src = entry.url; } else img.classList.add('show');
+  const bg = $('#sceneBg');
+  if (img.getAttribute('src') !== entry.url){ img.classList.remove('show'); bg.classList.remove('show'); img.onload = () => { img.classList.add('show'); bg.classList.add('show'); }; img.src = entry.url; bg.src = entry.url; } else { img.classList.add('show'); bg.classList.add('show'); }
   img.alt = alt; shown = {url: entry.url, svg: entry.svg, img: entry.img, name};
 }
-function hideImg(){ const img = $('#sceneImg'); img.classList.remove('show'); img.removeAttribute('src'); img.alt = ''; shown = null; }
+function hideImg(){ const img = $('#sceneImg'), bg = $('#sceneBg'); img.classList.remove('show'); bg.classList.remove('show'); img.removeAttribute('src'); bg.removeAttribute('src'); img.alt = ''; shown = null; }
 function setImgActions(list){
   const box = $('#imgActions'); box.innerHTML = '';
   const defs = {
