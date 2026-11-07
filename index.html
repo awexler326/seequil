@@ -233,7 +233,7 @@ let db = null, uid = null, downloads = null;
 let activePart = null; const partArt = new Map();
 const DEFAULT_STYLE = 'painterly digital illustration, soft atmospheric light, cohesive muted palette, vertical composition';
 let settings = {ai:false, fs:19, rate:1, voice:'', style: DEFAULT_STYLE, picSource:'openai', picQuality:'low', picMode:'tap', picGen:true, textProvider:'openai', oaKey:'', anKey:'', budget:3, spend:{},
-  oaText:'gpt-5-mini', oaImage:'gpt-image-1', anModel:'claude-sonnet-5-5', anQuick:'claude-haiku-5-5', costLow:0.016, costMed:0.063, oaIn:0.25, oaOut:2, anIn:3, anOut:15};
+  oaText:'gpt-6-luna', oaImage:'gpt-image-1', anModel:'claude-sonnet-5-5', anQuick:'claude-haiku-5-5', costLow:0.016, costMed:0.063, oaIn:0.1, oaOut:0.5, anIn:3, anOut:15};
 let book = null, P = 1;
 let aiBlocked = false, backoffUntil = 0;
 

@@ -69,5 +69,5 @@ Books live in **this browser on this device**. Your phone and your computer each
 
 - **"didn't accept your API key":** re-copy the key into Settings.
 - **"out of credit or hit its spending limit":** add credits on the provider's billing page.
-- **AI model names change over time.** If OpenAI or Anthropic retires a model, update the names under **Settings → Advanced: models and prices**. The defaults are `gpt-5-mini` (text), `gpt-image-1` (pictures), `claude-sonnet-5-5` and `claude-haiku-5-5`.
+- **AI model names change over time.** If OpenAI or Anthropic retires a model, update the names under **Settings → Advanced: models and prices**. The defaults are `gpt-6-luna` (text), `gpt-image-1` (pictures), `claude-sonnet-5-5` and `claude-haiku-5-5`.
 - **Copy-protected (DRM) EPUBs** from Kindle, Apple Books and similar stores can't be opened. DRM-free EPUBs and PDFs with real text work.
