@@ -222,7 +222,7 @@ const svgI = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`
 let db = null, uid = null, downloads = null;
 let activePart = null; const partArt = new Map();
 const DEFAULT_STYLE = 'painterly digital illustration, soft atmospheric light, cohesive muted palette, vertical composition';
-let settings = {ai:false, fs:19, rate:1, voice:'', style: DEFAULT_STYLE, picSource:'openai', picQuality:'low', textProvider:'openai', oaKey:'', anKey:'', budget:3, spend:{},
+let settings = {ai:false, fs:19, rate:1, voice:'', style: DEFAULT_STYLE, picSource:'openai', picQuality:'low', picMode:'tap', textProvider:'openai', oaKey:'', anKey:'', budget:3, spend:{},
   oaText:'gpt-5-mini', oaImage:'gpt-image-1', anModel:'claude-sonnet-5-5', anQuick:'claude-haiku-5-5', costLow:0.016, costMed:0.063, oaIn:0.25, oaOut:2, anIn:3, anOut:15};
 let book = null, P = 1;
 let aiBlocked = false, backoffUntil = 0;
@@ -886,6 +886,7 @@ $('#setBtn').onclick = () => {
       <option value="openai"${sel('openai', settings.picSource)}>ChatGPT images (OpenAI key)</option>
       <option value="claude"${sel('claude', settings.picSource)}>Claude drawings (Anthropic key)</option>
       <option value="own"${sel('own', settings.picSource)}>Only my own uploads</option></select></div>
+    <div class="field"><label for="picMode">Draw pictures</label><select id="picMode"><option value="tap"${settings.picMode !== 'auto' ? ' selected' : ''}>Only when I tap “Draw this page”</option><option value="auto"${settings.picMode === 'auto' ? ' selected' : ''}>Automatically, for every page</option></select><div class="muted" style="font-size:14px">Pictures you already have always show. Passage pictures are drawn when you choose “Picture this”.</div></div>
     <div class="field"><label for="picQ">ChatGPT picture quality</label><select id="picQ">
       <option value="low"${sel('low', settings.picQuality)}>Low (about $${Number(settings.costLow).toFixed(3)} each)</option>
       <option value="medium"${sel('medium', settings.picQuality)}>Medium (about $${Number(settings.costMed).toFixed(3)} each)</option></select></div>
@@ -913,7 +914,7 @@ $('#setBtn').onclick = () => {
   const sa = $('#saveAll'); if (sa) sa.onclick = () => saveAllPictures(sa);
   const bind = (id, key, conv) => { const el = $('#' + id); if (el) el.onchange = e => { settings[key] = conv ? conv(e.target.value) : e.target.value.trim(); if (/Key$/.test(key)){ aiBlocked = false; lastKeyMsg = ''; } saveSettings(); renderScene(); if (book){ requestArt(P, true, true); ensureCodex(); } }; };
   const n = v => Math.max(0, Number(v) || 0);
-  bind('picSrc', 'picSource'); bind('picQ', 'picQuality'); bind('txtSrc', 'textProvider'); bind('oaKey', 'oaKey'); bind('anKey', 'anKey');
+  bind('picSrc', 'picSource'); bind('picMode', 'picMode'); bind('picQ', 'picQuality'); bind('txtSrc', 'textProvider'); bind('oaKey', 'oaKey'); bind('anKey', 'anKey');
   bind('budIn', 'budget', n); bind('oaText', 'oaText'); bind('oaImage', 'oaImage'); bind('anModel', 'anModel'); bind('anQuick', 'anQuick');
   ['costLow','costMed','oaIn','oaOut','anIn','anOut'].forEach(k => bind(k, k, n));
   $('#budIn').addEventListener('change', () => { $('#spentV').textContent = spentLine(); });
@@ -1021,6 +1022,7 @@ function renderScene2(){
   hideImg();
   if (a && a.status === 'none'){ msg.innerHTML = '<div style="color:#C9CEDD">No scene on this page.</div>'; return; }
   if (why){ sceneNote(why); return; }
+  if (a && a.status === 'idle'){ drawPrompt(msg); return; }
   if (a && a.status === 'error'){ msg.innerHTML = `<div>${esc(a.msg || 'Couldn’t draw this page.')}</div><button class="btn gold" id="artRetry">Try again</button>`; $('#artRetry').onclick = () => { artCache.delete(P); requestArt(P, true, true); }; return; }
   pill.hidden = false; pill.innerHTML = '<span class="spin" aria-hidden="true"></span>Drawing this page…';
 }
@@ -1305,11 +1307,17 @@ async function saveAllPictures(btn){
   } catch(e){ toast('Couldn’t gather the pictures. Try again.'); }
   finally { btn.disabled = false; btn.textContent = label; }
 }
-function requestArt(page, front, now, force){
+function drawPrompt(msg){
+  const note = settings.picSource === 'openai' ? `About $${picCost().toFixed(3)}` : '';
+  msg.innerHTML = `<h3>Page ${P}</h3><div>Want a picture of this page?</div><button class="btn gold" id="drawBtn">Draw this page</button>${note ? `<div style="color:#C9CEDD;font-size:13px">${esc(note)}</div>` : ''}`;
+  $('#drawBtn').onclick = () => { artCache.delete(P); renderScene(); requestArt(P, true, true, false, true); };
+}
+function settled(pg){ const a = artCache.get(pg); return !!a && !(a.status === 'idle' && settings.picMode === 'auto'); }
+function requestArt(page, front, now, force, draw){
   if (!book || page < 1 || page > book.numPages) return;
-  if (artCache.has(page) && !force) { if (front) renderScene(); return; }
+  if (settled(page) && !force && !draw) { if (front) renderScene(); return; }
   if (artQueue.some(q => q.page === page)) return;
-  const job = {page, force, bid: book.id};
+  const job = {page, force, draw, bid: book.id};
   front ? artQueue.unshift(job) : artQueue.push(job);
   runArt();
 }
@@ -1319,7 +1327,7 @@ async function runArt(){
     while (artQueue.length){
       const job = artQueue.shift();
       if (!book || job.bid !== book.id) continue;
-      if (artCache.has(job.page) && !job.force) continue;
+      if (settled(job.page) && !job.force && !job.draw) continue;
       if (Math.abs(job.page - P) > 2) continue;
       await loadArt(job);
       if (book && job.bid === book.id){
@@ -1334,6 +1342,7 @@ async function loadArt(job){
   if (db && !job.force){
     try { const s = await withTimeout(bref().collection('art').doc(String(page)).get()); if (s.exists){ const d = s.data(); setArt(page, d.svg, d.img); return; } } catch(e){}
   }
+  if (settings.picMode !== 'auto' && !job.draw && !job.force){ artCache.set(page, {status:'idle'}); return; }
   if (!picReady() || Date.now() < backoffUntil) return;
   const text = (book.pages[page-1] || []).join('\n\n');
   if (text.length < 150){ artCache.set(page, {status:'none'}); return; }

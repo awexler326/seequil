@@ -48,6 +48,8 @@ Seequil's figures are estimates. Your OpenAI or Anthropic billing page has the r
 - **Claude drawings:** Claude draws the scene as vector art. This needs an Anthropic API key from the Claude Console, which is also prepaid.
 - **Only my own uploads:** no AI pictures. Use the clipboard button to copy a prompt into any generator (including free ones), then upload the picture or paste it onto the page with Ctrl/Cmd+V.
 
+**Settings → Draw pictures:** by default, Seequil only draws a page when you tap **Draw this page**, so you never pay for pages you didn't want. Switch to *Automatically, for every page* if you'd rather have every page drawn as you read.
+
 Every picture also has redraw, save, copy-prompt and upload buttons.
 
 **Memory and prompts use:** OpenAI (cheapest) or Claude.
