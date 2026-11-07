@@ -72,6 +72,15 @@ button:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-v
 .spin{width:14px;height:14px;border-radius:50%;border:2px solid rgba(246,243,236,.3);border-top-color:var(--paper);animation:sp 1s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
 .img-actions{position:absolute;right:12px;top:12px;display:flex;gap:6px}
+.pic-ctl{position:absolute;left:12px;top:12px;display:flex;gap:6px;align-items:center;z-index:2;flex-wrap:wrap}
+.pic-ctl .sw,.pic-ctl select{height:44px;border-radius:12px;border:0;background:rgba(11,14,31,.72);color:var(--paper);font:inherit;font-size:14px;font-weight:500}
+.pic-ctl .sw{padding:0 12px 0 10px;display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+.pic-ctl .track{width:34px;height:20px;border-radius:999px;background:#5A6385;position:relative;flex-shrink:0}
+.pic-ctl .track::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--paper);transition:left .2s}
+.pic-ctl .sw[aria-checked="true"] .track{background:var(--gold)}
+.pic-ctl .sw[aria-checked="true"] .track::after{left:16px}
+.pic-ctl select{padding:0 10px;cursor:pointer}
+.pic-ctl select:disabled{opacity:.55;cursor:default}
 .img-actions .icon-btn{background:rgba(11,14,31,.6);color:var(--paper)}
 .player{height:84px;flex-shrink:0;padding:0 16px;display:flex;align-items:center;gap:12px;background:var(--ink);color:var(--paper)}
 .player .icon-btn:hover{background:rgba(255,255,255,.08)}
@@ -173,6 +182,7 @@ input[type=range]{width:100%;accent-color:var(--gold);margin:0}
       <img id="sceneImg" alt="">
       <div class="scene-msg" id="sceneMsg"></div>
       <div class="pill" id="scenePill" hidden></div>
+      <div class="pic-ctl"><button class="sw" id="picSw" role="switch" aria-checked="true" aria-label="Make pictures"><span class="track" aria-hidden="true"></span><span id="picSwL">Pictures on</span></button><select id="picModeSel" aria-label="When to make pictures"><option value="tap">Only this page</option><option value="auto">Always</option></select></div>
       <div class="img-actions" id="imgActions"></div>
     </div>
   </div>
@@ -222,7 +232,7 @@ const svgI = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`
 let db = null, uid = null, downloads = null;
 let activePart = null; const partArt = new Map();
 const DEFAULT_STYLE = 'painterly digital illustration, soft atmospheric light, cohesive muted palette, vertical composition';
-let settings = {ai:false, fs:19, rate:1, voice:'', style: DEFAULT_STYLE, picSource:'openai', picQuality:'low', picMode:'tap', textProvider:'openai', oaKey:'', anKey:'', budget:3, spend:{},
+let settings = {ai:false, fs:19, rate:1, voice:'', style: DEFAULT_STYLE, picSource:'openai', picQuality:'low', picMode:'tap', picGen:true, textProvider:'openai', oaKey:'', anKey:'', budget:3, spend:{},
   oaText:'gpt-5-mini', oaImage:'gpt-image-1', anModel:'claude-sonnet-5-5', anQuick:'claude-haiku-5-5', costLow:0.016, costMed:0.063, oaIn:0.25, oaOut:2, anIn:3, anOut:15};
 let book = null, P = 1;
 let aiBlocked = false, backoffUntil = 0;
@@ -300,7 +310,7 @@ function textProvider(want){
 }
 function textReady(){ return !!(settings.ai && !aiBlocked && !budgetHit() && textProvider()); }
 function picReady(){
-  if (!settings.ai || aiBlocked || budgetHit()) return false;
+  if (!settings.ai || settings.picGen === false || aiBlocked || budgetHit()) return false;
   if (settings.picSource === 'openai') return !!settings.oaKey;
   if (settings.picSource === 'claude') return !!settings.anKey;
   return false;
@@ -886,7 +896,7 @@ $('#setBtn').onclick = () => {
       <option value="openai"${sel('openai', settings.picSource)}>ChatGPT images (OpenAI key)</option>
       <option value="claude"${sel('claude', settings.picSource)}>Claude drawings (Anthropic key)</option>
       <option value="own"${sel('own', settings.picSource)}>Only my own uploads</option></select></div>
-    <div class="field"><label for="picMode">Draw pictures</label><select id="picMode"><option value="tap"${settings.picMode !== 'auto' ? ' selected' : ''}>Only when I tap “Draw this page”</option><option value="auto"${settings.picMode === 'auto' ? ' selected' : ''}>Automatically, for every page</option></select><div class="muted" style="font-size:14px">Pictures you already have always show. Passage pictures are drawn when you choose “Picture this”.</div></div>
+    <div class="field"><label for="picMode">Picture generation</label><select id="picMode"><option value="tap"${settings.picMode !== 'auto' ? ' selected' : ''}>Only generate this page (tap “Draw this page”)</option><option value="auto"${settings.picMode === 'auto' ? ' selected' : ''}>Always generate (every page)</option></select><div class="muted" style="font-size:14px">The same choice, plus an on/off switch, sits at the top left of the picture while you read. Pictures you already have always show.</div></div>
     <div class="field"><label for="picQ">ChatGPT picture quality</label><select id="picQ">
       <option value="low"${sel('low', settings.picQuality)}>Low (about $${Number(settings.costLow).toFixed(3)} each)</option>
       <option value="medium"${sel('medium', settings.picQuality)}>Medium (about $${Number(settings.costMed).toFixed(3)} each)</option></select></div>
@@ -1006,6 +1016,7 @@ function renderScene2(){
     const part = book.parts.find(x => x.id === activePart), a = partArt.get(activePart);
     if (a && a.status === 'ready'){ showImg(a, 'Illustration for the selected passage', `passage-page-${part.page}`); pill.hidden = false; pill.textContent = 'Picture for this passage'; setImgActions(['back','redraw','save','delpart']); return; }
     hideImg(); setImgActions(['back','delpart']);
+    if (settings.picGen === false){ offNote(msg); return; }
     if (why){ sceneNote(why); return; }
     if (a && a.status === 'error'){ msg.innerHTML = '<div>Couldn’t draw this passage.</div><button class="btn gold" id="partRetry">Try again</button>'; $('#partRetry').onclick = () => drawPart(part, true); return; }
     pill.hidden = false; pill.innerHTML = '<span class="spin" aria-hidden="true"></span>Drawing this passage…'; return;
@@ -1021,8 +1032,9 @@ function renderScene2(){
   }
   hideImg();
   if (a && a.status === 'none'){ msg.innerHTML = '<div style="color:#C9CEDD">No scene on this page.</div>'; return; }
+  if (settings.picGen === false){ offNote(msg); return; }
+  if (why !== 'own' && settings.picMode !== 'auto' && (!a || a.status === 'idle')){ drawPrompt(msg); return; }
   if (why){ sceneNote(why); return; }
-  if (a && a.status === 'idle'){ drawPrompt(msg); return; }
   if (a && a.status === 'error'){ msg.innerHTML = `<div>${esc(a.msg || 'Couldn’t draw this page.')}</div><button class="btn gold" id="artRetry">Try again</button>`; $('#artRetry').onclick = () => { artCache.delete(P); requestArt(P, true, true); }; return; }
   pill.hidden = false; pill.innerHTML = '<span class="spin" aria-hidden="true"></span>Drawing this page…';
 }
@@ -1094,6 +1106,7 @@ function setImgActions(list){
   }
 }
 function renderScene(){
+  syncPicCtl();
   if (!book) return;
   renderScene2();
   const box = $('#imgActions'); const have = [...box.children].map(b => b.dataset.k);
@@ -1114,6 +1127,7 @@ function setActivePart(id){
   if (part && !partArt.has(part.id) && picReady()) drawPart(part);
 }
 async function createPart(ranges){
+  if (settings.picGen === false) toast('Pictures are off, so this passage won’t be drawn until you turn them on.');
   if (!picReady() && settings.picSource !== 'own') enableAi();
   const first = ranges[0], last = ranges[ranges.length - 1];
   const part = {id: 'pt' + Date.now().toString(36) + Math.random().toString(36).slice(2,5), page: P, ps: first.para, s: first.s, pe: last.para, e: last.e, text: ranges.map(r => r.text).join('\n\n').slice(0, 4000), at: Date.now()};
@@ -1310,8 +1324,33 @@ async function saveAllPictures(btn){
 function drawPrompt(msg){
   const note = settings.picSource === 'openai' ? `About $${picCost().toFixed(3)}` : '';
   msg.innerHTML = `<h3>Page ${P}</h3><div>Want a picture of this page?</div><button class="btn gold" id="drawBtn">Draw this page</button>${note ? `<div style="color:#C9CEDD;font-size:13px">${esc(note)}</div>` : ''}`;
-  $('#drawBtn').onclick = () => { artCache.delete(P); renderScene(); requestArt(P, true, true, false, true); };
+  $('#drawBtn').onclick = () => {
+    let why = picBlockReason();
+    if (why === 'off' && (settings.oaKey || settings.anKey)){ settings.ai = true; aiBlocked = false; saveSettings(); ensureCodex(); why = picBlockReason(); }
+    if (why === 'off') why = settings.picSource === 'claude' ? 'needAn' : 'needOa';
+    if (why){ sceneNote(why); return; }
+    artCache.delete(P); renderScene(); requestArt(P, true, true, false, true);
+  };
 }
+function offNote(msg){
+  msg.innerHTML = '<h3>Pictures are off</h3><div>No new pictures will be made. Pictures you already have still show. Use the switch at the top left to turn them back on.</div>';
+}
+function syncPicCtl(){
+  const on = settings.picGen !== false, sw = $('#picSw'), sel = $('#picModeSel');
+  if (!sw) return;
+  sw.setAttribute('aria-checked', on ? 'true' : 'false'); $('#picSwL').textContent = on ? 'Pictures on' : 'Pictures off';
+  sel.value = settings.picMode === 'auto' ? 'auto' : 'tap'; sel.disabled = !on;
+  const ms = $('#picMode'); if (ms) ms.value = sel.value;
+}
+$('#picSw').onclick = () => {
+  settings.picGen = settings.picGen === false; saveSettings(); syncPicCtl();
+  toast(settings.picGen ? 'Pictures on' : 'Pictures off. No new pictures will be made.');
+  if (book){ renderScene(); if (settings.picGen && settings.picMode === 'auto') requestArt(P, true, true); }
+};
+$('#picModeSel').onchange = e => {
+  settings.picMode = e.target.value; saveSettings(); syncPicCtl();
+  if (book){ renderScene(); if (settings.picMode === 'auto') requestArt(P, true, true); }
+};
 function settled(pg){ const a = artCache.get(pg); return !!a && !(a.status === 'idle' && settings.picMode === 'auto'); }
 function requestArt(page, front, now, force, draw){
   if (!book || page < 1 || page > book.numPages) return;
@@ -1342,7 +1381,7 @@ async function loadArt(job){
   if (db && !job.force){
     try { const s = await withTimeout(bref().collection('art').doc(String(page)).get()); if (s.exists){ const d = s.data(); setArt(page, d.svg, d.img); return; } } catch(e){}
   }
-  if (settings.picMode !== 'auto' && !job.draw && !job.force){ artCache.set(page, {status:'idle'}); return; }
+  if (settings.picGen === false || (settings.picMode !== 'auto' && !job.draw && !job.force)){ artCache.set(page, {status:'idle'}); return; }
   if (!picReady() || Date.now() < backoffUntil) return;
   const text = (book.pages[page-1] || []).join('\n\n');
   if (text.length < 150){ artCache.set(page, {status:'none'}); return; }
