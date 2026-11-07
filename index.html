@@ -1,0 +1,1544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seequil</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1B2440">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap">
+<style>
+:root{--ink:#1B2440;--paper:#F6F3EC;--line:#E3DED2;--muted:#5A6178;--gold:#E8A33D;--blue:#1F5E8C;--amber:#8A5A12;--fs:19px}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--paper);color:var(--ink);font-family:Inter,system-ui,sans-serif}
+button{font:inherit;color:inherit}
+button:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+[hidden]{display:none!important}
+.icon-btn{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border:0;background:none;border-radius:10px;padding:0;cursor:pointer;flex-shrink:0}
+.icon-btn:hover{background:rgba(27,36,64,.07)}
+.icon-btn svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.btn{height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer;font-weight:500;display:inline-flex;align-items:center;gap:8px}
+.btn.primary{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.btn.gold{background:var(--gold);border-color:var(--gold);color:var(--ink)}
+.btn.small{height:36px;padding:0 12px;font-size:14px}
+.muted{color:var(--muted)}
+
+/* Library */
+#library{min-height:100%;max-width:880px;margin:0 auto;padding:40px 24px 64px}
+.brand{display:flex;align-items:center;gap:14px;margin-bottom:28px}
+.brand h1{margin:0;font-family:Literata,Georgia,serif;font-size:36px;font-weight:600}
+.brand p{margin:2px 0 0;color:var(--muted)}
+.drop{border:2px dashed #CFC8BA;border-radius:16px;padding:36px 24px;text-align:center;background:#FBFAF6;display:flex;flex-direction:column;align-items:center;gap:12px}
+.drop.over{border-color:var(--blue);background:#EEF3F9}
+.drop h2{margin:0;font-size:18px}
+#uploadStatus{min-height:22px;font-size:14px}
+.books{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px;margin-top:28px}
+.book{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:10px}
+.book h3{margin:0;font-family:Literata,Georgia,serif;font-size:19px;line-height:1.3;overflow-wrap:anywhere}
+.bar{height:4px;border-radius:2px;background:#E6E1D6}.bar>div{height:4px;border-radius:2px;background:var(--gold)}
+.book .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.note{font-size:14px;color:var(--muted);margin-top:16px}
+
+/* Reader */
+#reader{height:100vh;height:100dvh;display:flex;flex-direction:column}
+.topbar{height:60px;flex-shrink:0;padding:0 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
+.topbar .t{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar .t b{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar .t span{font-size:13px;color:var(--muted)}
+.icon-btn.on{background:#DCE7F3;color:var(--blue)}
+.spread{flex:1;display:flex;min-height:0}
+.textpane{width:50%;overflow:auto;padding:40px 56px 56px}
+.page-text{font-family:Literata,Georgia,serif;font-size:var(--fs);line-height:1.65;max-width:36em;margin:0 auto}
+.page-text p{margin:0 0 1em}
+.page-num{font-size:12px;letter-spacing:.12em;font-weight:600;color:var(--amber);margin:0 auto 18px;max-width:calc(var(--fs)*36);font-family:Inter,sans-serif}
+.tok,.sp{border-radius:3px}
+.tok.ent{color:var(--blue);font-weight:600;text-decoration:underline dotted 1.5px;text-underline-offset:4px;cursor:pointer}
+.say-sent{background:#E4E9F2}
+.tok.say-word{background:var(--ink)!important;color:var(--paper)!important;box-shadow:0 0 0 2px var(--ink)}
+.tok.note-end::after{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--amber);margin-left:3px;vertical-align:super}
+.part-mark{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin:0 6px 0 0;vertical-align:-6px;border:0;border-radius:7px;background:#EFE6D2;color:var(--amber);cursor:pointer;padding:0}
+.part-mark svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.part-mark.on{background:var(--gold);color:var(--ink)}
+.empty-page{color:var(--muted);font-family:Inter,sans-serif;font-size:15px}
+.imagepane{flex:1;position:relative;background:var(--ink);overflow:hidden;display:flex;align-items:center;justify-content:center}
+#sceneImg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .4s}
+#sceneImg.show{opacity:1}
+.scene-msg{position:relative;max-width:360px;text-align:center;color:#E9ECF4;padding:24px;display:flex;flex-direction:column;align-items:center;gap:14px;font-size:15px;line-height:1.5}
+.scene-msg h3{margin:0;font-family:Literata,Georgia,serif;font-size:22px;font-weight:600;color:var(--paper)}
+.pill{position:absolute;left:16px;bottom:16px;padding:7px 13px;border-radius:999px;background:rgba(11,14,31,.78);color:var(--paper);font-size:13px;display:flex;align-items:center;gap:8px}
+.spin{width:14px;height:14px;border-radius:50%;border:2px solid rgba(246,243,236,.3);border-top-color:var(--paper);animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.img-actions{position:absolute;right:12px;top:12px;display:flex;gap:6px}
+.img-actions .icon-btn{background:rgba(11,14,31,.6);color:var(--paper)}
+.player{height:84px;flex-shrink:0;padding:0 16px;display:flex;align-items:center;gap:12px;background:var(--ink);color:var(--paper)}
+.player .icon-btn:hover{background:rgba(255,255,255,.08)}
+.play{width:56px;height:56px;border-radius:50%;background:var(--gold);color:var(--ink);border:0;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.play svg{width:22px;height:22px;fill:currentColor}
+.pmid{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.pmid .lbl{display:flex;justify-content:space-between;gap:8px;font-size:13px;color:#C9CEDD}
+.pmid .lbl span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+input[type=range]{width:100%;accent-color:var(--gold);margin:0}
+.player select{height:44px;border-radius:10px;border:1px solid #4A5373;background:var(--ink);color:var(--paper);padding:0 8px;font:inherit;font-size:14px}
+@media (max-width:820px){
+  .spread{flex-direction:column}
+  .imagepane{flex:0 0 36vh;order:-1}
+  .textpane{width:auto;flex:1;padding:20px 22px 40px}
+  .player{gap:4px;padding:0 6px}
+  .hide-narrow{display:none!important}
+  .play{width:50px;height:50px}
+}
+
+/* Floating selection bar */
+#selBar{position:fixed;z-index:40;display:flex;align-items:center;gap:2px;padding:0 6px;background:#fff;border-radius:12px;box-shadow:0 6px 24px rgba(27,36,64,.22);font-size:14px}
+#selBar .dot{width:34px;height:44px;border:0;background:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+#selBar .dot span{width:22px;height:22px;border-radius:50%;display:block}
+#selBar .dot.cur span{box-shadow:0 0 0 2px #fff,0 0 0 4px var(--ink)}
+#selBar .act{height:44px;border:0;background:none;padding:0 9px;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+#selBar .act svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#selBar .div{width:1px;height:24px;background:var(--line);margin:0 4px}
+
+/* Panels */
+.scrim{position:fixed;inset:0;background:rgba(11,14,31,.35);z-index:50}
+.panel{position:fixed;z-index:51;top:0;right:0;bottom:0;width:420px;max-width:100%;background:#fff;box-shadow:-12px 0 40px rgba(11,14,31,.2);display:flex;flex-direction:column}
+.panel header{display:flex;align-items:center;gap:10px;padding:14px 14px 14px 22px;border-bottom:1px solid var(--line)}
+.panel header h2{margin:0;flex:1;font-family:Literata,Georgia,serif;font-size:22px;font-weight:600}
+.panel .body{flex:1;overflow:auto;padding:18px 22px 28px;display:flex;flex-direction:column;gap:18px}
+@media (max-width:820px){.panel{top:auto;width:100%;max-height:82vh;border-radius:18px 18px 0 0}}
+.shield{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:12px;background:#EAF0F7;color:#1F3F66;font-size:14px;line-height:1.45}
+.shield svg{width:18px;height:18px;flex-shrink:0;margin-top:1px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.h3{margin:0;font-size:12px;font-weight:600;letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+.desc{margin:0;font-family:Literata,Georgia,serif;font-size:16px;line-height:1.55}
+.facts{display:flex;flex-direction:column;gap:4px}
+.fact{display:flex;gap:10px;align-items:baseline;font-size:15px;line-height:1.45}
+.fact button{flex-shrink:0;min-width:52px;height:32px;border:0;background:#F6EEDC;color:var(--amber);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer}
+.ent-list{display:flex;flex-direction:column;gap:2px}
+.ent-item{display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:44px;padding:0 12px;border:0;border-radius:10px;background:none;cursor:pointer;text-align:left;font-size:15px}
+.ent-item:hover{background:#F3F1EA}
+.ent-item small{color:var(--muted);font-size:13px}
+.search{height:44px;border:1px solid var(--line);border-radius:10px;padding:0 12px;font:inherit;width:100%}
+.hl-item{border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.hl-item q{font-family:Literata,Georgia,serif;font-size:15px;line-height:1.5;quotes:none;padding:1px 3px;border-radius:3px}
+.hl-item .row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.hl-item .n{font-size:14px;color:var(--ink);background:#FBF6EA;border-radius:8px;padding:8px 10px;white-space:pre-wrap}
+.field{display:flex;flex-direction:column;gap:8px}
+.field label{font-size:14px;font-weight:600}
+.field select{height:44px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font:inherit;background:#fff}
+.seg{display:flex;gap:6px}
+.switch{display:flex;align-items:center;gap:12px;font-size:15px}
+.switch input{width:22px;height:22px;accent-color:var(--blue)}
+.modal{position:fixed;z-index:60;left:50%;top:50%;transform:translate(-50%,-50%);width:min(440px,calc(100% - 32px));background:#fff;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(11,14,31,.35);display:flex;flex-direction:column;gap:12px}
+.modal textarea{width:100%;min-height:120px;border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;resize:vertical}
+.modal .row{display:flex;justify-content:flex-end;gap:8px}
+.toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:10px;font-size:14px;z-index:70;max-width:calc(100% - 32px)}
+</style>
+<script src="pdf.min.js"></script>
+<script src="jszip.min.js"></script>
+</head>
+<body>
+
+<section id="library">
+  <div class="brand">
+    <svg width="56" height="56" viewBox="0 0 240 240" aria-hidden="true"><defs><clipPath id="rp"><path d="M124 78 Q162 64 204 74 L204 174 Q162 164 124 178 Z"/></clipPath></defs><rect width="240" height="240" rx="54" fill="#1B2440"/><path d="M36 74 Q78 64 116 78 L116 178 Q78 164 36 174 Z" fill="#F6F3EC"/><g stroke="#1B2440" stroke-width="5" stroke-linecap="round" opacity="0.45"><path d="M52 98 L100 104"/><path d="M52 116 L100 121"/><path d="M52 134 L100 138"/><path d="M52 152 L86 155"/></g><g clip-path="url(#rp)"><rect x="120" y="60" width="90" height="125" fill="#E8A33D"/><circle cx="172" cy="112" r="13" fill="#F6F3EC"/><path d="M120 168 L146 138 L164 156 L180 142 L210 172 L210 190 L120 190 Z" fill="#1B2440"/></g></svg>
+    <div><h1>Seequil</h1><p>Read it. See it. Remember it.</p></div>
+  </div>
+  <div class="drop" id="drop">
+    <h2>Add a book</h2>
+    <div class="muted">Drop an EPUB or PDF here, or choose one. PDFs need real text (not scanned images).</div>
+    <label class="btn primary" style="cursor:pointer">Choose a book<input id="fileIn" type="file" accept=".epub,.pdf,application/epub+zip,application/pdf" hidden></label>
+    <div id="uploadStatus" role="status" aria-live="polite"></div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px"><button class="btn small" id="backupBtn">Back up library</button><label class="btn small" style="cursor:pointer">Restore a backup<input type="file" id="restoreIn" accept=".json,application/json" hidden></label></div>
+  <div id="libMsg" class="note"></div>
+  <div class="books" id="books"></div>
+</section>
+
+<section id="reader" hidden>
+  <div class="topbar">
+    <button class="icon-btn" id="toLib" aria-label="Back to library"><svg viewBox="0 0 24 24"><path d="M15 5 L8 12 L15 19"/></svg></button>
+    <div class="t"><b id="bTitle"></b><span id="bPage"></span></div>
+    <button class="icon-btn" id="memBtn" aria-label="Memory: people, places and events"><svg viewBox="0 0 24 24"><circle cx="6" cy="7" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7.2 9.4 L10.8 15.8 M16.9 8.3 L13.2 15.8 M8.5 6.8 L15.5 6.2"/></svg></button>
+    <button class="icon-btn" id="hlBtn" aria-label="Highlights and notes"><svg viewBox="0 0 24 24"><path d="M9 15 L4 20 H9 L11 18"/><path d="M14 4 L20 10 L11 19 L5 13 Z"/></svg></button>
+    <button class="icon-btn" id="setBtn" aria-label="Settings" style="font-family:Literata,Georgia,serif;font-size:18px;font-weight:600">Aa</button>
+  </div>
+  <div class="spread">
+    <div class="textpane" id="textpane">
+      <div class="page-num" id="pageNum"></div>
+      <div class="page-text" id="pageText"></div>
+    </div>
+    <div class="imagepane" id="imagepane">
+      <img id="sceneImg" alt="">
+      <div class="scene-msg" id="sceneMsg"></div>
+      <div class="pill" id="scenePill" hidden></div>
+      <div class="img-actions" id="imgActions"></div>
+    </div>
+  </div>
+  <div class="player">
+    <button class="icon-btn hide-narrow" id="prevPg" aria-label="Previous page"><svg viewBox="0 0 24 24"><path d="M15 5 L8 12 L15 19"/></svg></button>
+    <button class="icon-btn" id="backS" aria-label="Previous sentence"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/></svg></button>
+    <button class="play" id="playBtn" aria-label="Read aloud"><svg viewBox="0 0 24 24" id="playIco"><path d="M8 5v14l11-7z"/></svg></button>
+    <button class="icon-btn" id="fwdS" aria-label="Next sentence"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v4h-4"/></svg></button>
+    <button class="icon-btn hide-narrow" id="nextPg" aria-label="Next page"><svg viewBox="0 0 24 24"><path d="M9 5 L16 12 L9 19"/></svg></button>
+    <div class="pmid">
+      <div class="lbl"><span id="ttsLbl">Tap play to read aloud</span><span id="memLbl"></span></div>
+      <input type="range" id="pgSlider" min="1" max="1" value="1" aria-label="Page">
+    </div>
+    <select id="rateSel" aria-label="Reading speed"><option value="0.8">0.8×</option><option value="1" selected>1.0×</option><option value="1.2">1.2×</option><option value="1.5">1.5×</option><option value="2">2.0×</option></select>
+  </div>
+</section>
+
+<input type="file" id="picIn" accept="image/*" hidden aria-hidden="true">
+<div id="selBar" role="toolbar" aria-label="Highlight options" hidden></div>
+<div id="overlay"></div>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const HL = {yellow:'#F6D58A', green:'#BFE3C9', pink:'#F5C2C7', blue:'#C9DAF5'};
+const CHUNK = 6, GROUP = 20;
+const ICON = {
+  play:'<path d="M8 5v14l11-7z"/>',
+  pause:'<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
+  close:'<path d="M6 6l12 12M18 6L6 18"/>',
+  lock:'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  note:'<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+  copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
+  speak:'<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>',
+  trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
+  image:'<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/>',
+  save:'<path d="M12 4v11M7 10l5 5 5-5M5 19h14"/>',
+  redraw:'<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v4h-4"/>',
+  back:'<path d="M15 5 L8 12 L15 19"/>',
+  upload:'<path d="M12 16V5M7 10l5-5 5 5M5 19h14"/>',
+  prompt:'<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/>'
+};
+const svgI = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
+
+let db = null, uid = null, downloads = null;
+let activePart = null; const partArt = new Map();
+const DEFAULT_STYLE = 'painterly digital illustration, soft atmospheric light, cohesive muted palette, vertical composition';
+let settings = {ai:false, fs:19, rate:1, voice:'', style: DEFAULT_STYLE, picSource:'openai', picQuality:'low', textProvider:'openai', oaKey:'', anKey:'', budget:3, spend:{},
+  oaText:'gpt-5-mini', oaImage:'gpt-image-1', anModel:'claude-sonnet-5-5', anQuick:'claude-haiku-5-5', costLow:0.016, costMed:0.063, oaIn:0.25, oaOut:2, anIn:3, anOut:15};
+let book = null, P = 1;
+let aiBlocked = false, backoffUntil = 0;
+
+/* ---------- small helpers ---------- */
+function toast(msg){ const t=document.createElement('div'); t.className='toast'; t.setAttribute('role','status'); t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(), 3200); }
+function withTimeout(p, ms=10000){ return Promise.race([p, new Promise((_,rej)=>setTimeout(()=>rej({code:'timeout'}), ms))]); }
+const userCol = () => db.collection('data/users/' + uid);
+const bref = () => userCol().doc('book_' + book.id);
+function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
+const aiReady = () => textReady();
+let lastToast = '';
+function aiError(e){
+  const code = e && e.code;
+  if (code === 'bad_key' || code === 'no_credit'){ aiBlocked = true; lastKeyMsg = e.message || ''; renderScene(); }
+  else if (code === 'budget'){ renderScene(); if (lastToast !== 'budget'){ lastToast = 'budget'; toast('Monthly budget reached'); } }
+  else if (code === 'rate_limited'){ backoffUntil = Date.now() + 60000; }
+  else if (e && e.message && lastToast !== e.message){ lastToast = e.message; toast(e.message); }
+}
+
+/* ---------- on-device storage (IndexedDB), same shape the reader already uses ---------- */
+const LocalDB = (() => {
+  let dbp = null;
+  const open = () => dbp || (dbp = new Promise((res, rej) => { const r = indexedDB.open('seequil', 1); r.onupgradeneeded = () => r.result.createObjectStore('docs'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }));
+  const req = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+  const store = async mode => (await open()).transaction('docs', mode).objectStore('docs');
+  const snap = (id, data) => ({id, exists: data !== undefined, data: () => data, metadata: {fromCache: false, hasPendingWrites: false}});
+  const plain = d => JSON.parse(JSON.stringify(d));
+  function docRef(path){
+    return {
+      id: path.split('/').pop(), path,
+      async get(){ return snap(this.id, await req((await store('readonly')).get(path))); },
+      async set(data){ await req((await store('readwrite')).put(plain(data), path)); },
+      async update(data){ const s = await store('readwrite'); const cur = await req(s.get(path)); if (cur === undefined) throw {code: 'invalid_argument'}; await req(s.put({...cur, ...plain(data)}, path)); },
+      async delete(){ await req((await store('readwrite')).delete(path)); },
+      collection(sub){ return colRef(path + '/' + sub); }
+    };
+  }
+  function colRef(path, filters = []){
+    return {
+      path,
+      doc(id){ return docRef(path + '/' + (id || ('d' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7)))); },
+      where(f, op, v){ return colRef(path, [...filters, [f, op, v]]); },
+      async get(){
+        const s = await store('readonly'); const range = IDBKeyRange.bound(path + '/', path + '/￿');
+        const [keys, vals] = await Promise.all([req(s.getAllKeys(range)), req(s.getAll(range))]);
+        const docs = [];
+        keys.forEach((k, i) => { const rest = k.slice(path.length + 1); if (rest.includes('/')) return; const v = vals[i]; if (filters.every(([f, op, val]) => op !== '==' || (v && v[f] === val))) docs.push(snap(rest, v)); });
+        return {docs, size: docs.length, empty: !docs.length};
+      }
+    };
+  }
+  return {
+    doc: docRef, collection: p => colRef(p),
+    async dump(){ const s = await store('readonly'); const [keys, vals] = await Promise.all([req(s.getAllKeys()), req(s.getAll())]); return keys.map((k, i) => [k, vals[i]]); },
+    async load(entries){ for (const [k, v] of entries){ if (typeof k === 'string' && k.startsWith('data/users/local/') && v && typeof v === 'object') await req((await store('readwrite')).put(v, k)); } }
+  };
+})();
+
+/* ---------- AI providers: your own OpenAI and/or Anthropic keys ---------- */
+let lastKeyMsg = '';
+const monthNow = () => new Date().toISOString().slice(0, 7);
+function spentThisMonth(){ const s = settings.spend || {}; return s.month === monthNow() ? (s.usd || 0) : 0; }
+function addSpend(usd){ if (!(usd > 0)) return; settings.spend = {month: monthNow(), usd: spentThisMonth() + usd}; saveSettings(); const v = $('#spentV'); if (v) v.textContent = spentLine(); }
+const spentLine = () => `Spent this month (estimate): $${spentThisMonth().toFixed(2)}${settings.budget > 0 ? ' of $' + Number(settings.budget).toFixed(2) : ''}`;
+const budgetHit = () => settings.budget > 0 && spentThisMonth() >= settings.budget;
+function checkBudget(est){ if (settings.budget > 0 && spentThisMonth() + est > settings.budget) throw {code: 'budget'}; }
+const picCost = () => settings.picQuality === 'medium' ? Number(settings.costMed) : Number(settings.costLow);
+function textProvider(want){
+  const p = want || settings.textProvider;
+  if (p === 'anthropic' && settings.anKey) return 'anthropic';
+  if (p === 'openai' && settings.oaKey) return 'openai';
+  if (want) return null;
+  return settings.oaKey ? 'openai' : settings.anKey ? 'anthropic' : null;
+}
+function textReady(){ return !!(settings.ai && !aiBlocked && !budgetHit() && textProvider()); }
+function picReady(){
+  if (!settings.ai || aiBlocked || budgetHit()) return false;
+  if (settings.picSource === 'openai') return !!settings.oaKey;
+  if (settings.picSource === 'claude') return !!settings.anKey;
+  return false;
+}
+function apiErr(provider, status, j){
+  const m = (j && j.error && (j.error.message || j.error.type)) || '';
+  const name = provider === 'openai' ? 'OpenAI' : 'Anthropic';
+  if (status === 401 || status === 403) return {code: 'bad_key', message: `${name} didn’t accept your API key. Check it in settings (Aa).`};
+  if ((j && j.error && j.error.code === 'insufficient_quota') || /credit balance|insufficient_quota|billing|spend limit/i.test(m)) return {code: 'no_credit', message: `Your ${name} account is out of credit or hit its spending limit.`};
+  if (status === 429) return {code: 'rate_limited', message: m};
+  return {code: 'api', message: `${name}: ${m || 'request failed (' + status + ')'}`};
+}
+async function callText(prompt, opts = {}){
+  const prov = textProvider(opts.provider);
+  if (!prov) throw {code: 'bad_key', message: 'Add an API key in settings (Aa).'};
+  checkBudget(0.003);
+  let r, j;
+  try {
+    if (prov === 'openai'){
+      r = await fetch('https://api.openai.com/v1/chat/completions', {method: 'POST', headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + settings.oaKey},
+        body: JSON.stringify({model: settings.oaText, messages: [{role: 'user', content: prompt}]})});
+    } else {
+      const model = opts.modelTier === 'quick' ? settings.anQuick : settings.anModel;
+      r = await fetch('https://api.anthropic.com/v1/messages', {method: 'POST', headers: {'content-type': 'application/json', 'x-api-key': settings.anKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true'},
+        body: JSON.stringify({model, max_tokens: opts.maxTokens || 4000, messages: [{role: 'user', content: prompt}]})});
+    }
+  } catch(e){ throw {code: 'api', message: 'Couldn’t reach the AI service. Are you online?'}; }
+  j = await r.json().catch(() => ({}));
+  if (!r.ok) throw apiErr(prov, r.status, j);
+  if (prov === 'openai'){
+    const u = j.usage || {}; addSpend(((u.prompt_tokens || 0) * settings.oaIn + (u.completion_tokens || 0) * settings.oaOut) / 1e6);
+    return {text: (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || ''};
+  }
+  const u = j.usage || {}; addSpend(((u.input_tokens || 0) * settings.anIn + (u.output_tokens || 0) * settings.anOut) / 1e6);
+  return {text: (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('')};
+}
+async function openaiImage(prompt){
+  if (!settings.oaKey) throw {code: 'bad_key', message: 'Add an OpenAI API key in settings (Aa).'};
+  checkBudget(picCost());
+  const body = {model: settings.oaImage, prompt: prompt.slice(0, 3800), size: '1024x1536', quality: settings.picQuality, n: 1};
+  if (/^dall-e/i.test(settings.oaImage)){ body.response_format = 'b64_json'; body.size = '1024x1792'; body.quality = settings.picQuality === 'medium' ? 'hd' : 'standard'; }
+  let r;
+  try { r = await fetch('https://api.openai.com/v1/images/generations', {method: 'POST', headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + settings.oaKey}, body: JSON.stringify(body)}); }
+  catch(e){ throw {code: 'api', message: 'Couldn’t reach OpenAI. Are you online?'}; }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw apiErr('openai', r.status, j);
+  addSpend(picCost());
+  const b64 = j.data && j.data[0] && j.data[0].b64_json;
+  if (!b64) throw {code: 'api', message: 'OpenAI sent back no picture.'};
+  return await shrinkImage(dataUrlToBlob('data:image/png;base64,' + b64));
+}
+const sample = callText;
+const downloadsLocal = {save: async ({filename, data}) => {
+  const blob = data instanceof Blob ? data : new Blob([data]);
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 5000);
+  return {status: 'saved'};
+}};
+
+/* ---------- boot ---------- */
+async function boot(){
+  if (window.pdfjsLib){ pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js'; }
+  downloads = downloadsLocal;
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  try { await LocalDB.collection('x').get(); db = LocalDB; uid = 'local'; } catch(e){ db = null; }
+  renderLibrary();
+  if (!db){ $('#libMsg').textContent = 'This browser won’t let Seequil save (private browsing?), so books last only until you close the page.'; return; }
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch(e){}
+  try { const s = await userCol().doc('settings').get(); if (s.exists) Object.assign(settings, s.data()); } catch(e){}
+  applySettings();
+  $('#libMsg').textContent = 'Your books are saved in this browser on this device. Use “Back up library” now and then to keep a copy.';
+  await loadLibrary();
+}
+const saveSettings = debounce(async () => { if (!db) return; try { await userCol().doc('settings').set({...settings}); } catch(e){} }, 600);
+function applySettings(){ document.documentElement.style.setProperty('--fs', settings.fs + 'px'); $('#rateSel').value = String(settings.rate); }
+
+/* ---------- backup & restore ---------- */
+$('#backupBtn').onclick = async () => {
+  const st = $('#uploadStatus'); st.textContent = 'Preparing backup…';
+  try {
+    const entries = (await LocalDB.dump()).map(([k, v]) => k.endsWith('/settings') ? [k, {...v, oaKey: '', anKey: ''}] : [k, v]);
+    await downloads.save({filename: `Seequil backup ${new Date().toISOString().slice(0, 10)}.json`, data: JSON.stringify({seequil: 1, entries})});
+    st.textContent = 'Backup saved. (Your API keys aren’t included.)';
+  } catch(e){ st.textContent = 'Couldn’t make the backup.'; }
+};
+$('#restoreIn').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  const st = $('#uploadStatus'); st.textContent = 'Restoring…';
+  try {
+    const j = JSON.parse(await f.text());
+    if (!j || j.seequil !== 1 || !Array.isArray(j.entries)) throw 0;
+    const keep = {oaKey: settings.oaKey, anKey: settings.anKey};
+    await LocalDB.load(j.entries);
+    const s = await userCol().doc('settings').get(); if (s.exists){ Object.assign(settings, s.data(), keep); saveSettings(); applySettings(); }
+    await loadLibrary(); st.textContent = 'Library restored.';
+  } catch(err){ st.textContent = 'That file isn’t a Seequil backup.'; }
+});
+
+/* ---------- library ---------- */
+let libBooks = [];
+async function loadLibrary(){
+  if (!db) { renderLibrary(); return; }
+  try {
+    const snap = await withTimeout(userCol().where('kind','==','book').get());
+    libBooks = snap.docs.map(d => d.data()).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  } catch(e){ $('#libMsg').textContent = 'Couldn’t reach your saved books yet. Try again in a moment.'; }
+  renderLibrary();
+}
+function renderLibrary(){
+  const wrap = $('#books'); wrap.textContent = '';
+  const list = db ? libBooks : (book ? [{id:book.id,title:book.title,numPages:book.numPages,page:P}] : []);
+  for (const b of list){
+    const pct = Math.round(((b.page||1)/(b.numPages||1))*100);
+    const card = document.createElement('div'); card.className = 'book';
+    card.innerHTML = `<h3>${esc(b.title)}</h3><div class="muted" style="font-size:14px">Page ${b.page||1} of ${b.numPages}</div><div class="bar"><div style="width:${pct}%"></div></div><div class="row"><button class="btn primary small" data-open>Continue</button><button class="btn small" data-del>Delete</button></div>`;
+    card.querySelector('[data-open]').onclick = () => openBook(b.id);
+    const del = card.querySelector('[data-del]');
+    del.onclick = async () => {
+      if (del.dataset.sure){ del.disabled = true; del.textContent = 'Deleting…'; await deleteBook(b.id); return; }
+      del.dataset.sure = '1'; del.textContent = 'Tap again to delete'; setTimeout(()=>{ if(del.isConnected){ delete del.dataset.sure; del.textContent='Delete'; } }, 4000);
+    };
+    wrap.appendChild(card);
+  }
+}
+async function deleteBook(id){
+  if (!db){ book = null; renderLibrary(); return; }
+  const ref = userCol().doc('book_' + id);
+  try {
+    for (const sub of ['pages','codex','art','hl','parts']){
+      const s = await ref.collection(sub).get();
+      for (const d of s.docs) await ref.collection(sub).doc(d.id).delete();
+    }
+    await ref.delete();
+  } catch(e){ toast('Couldn’t delete everything. Try again.'); }
+  await loadLibrary();
+}
+
+/* ---------- import (EPUB + PDF) ---------- */
+const drop = $('#drop');
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) importFile(f); });
+$('#fileIn').addEventListener('change', e => { const f = e.target.files[0]; if (f) importFile(f); e.target.value = ''; });
+
+let importing = false;
+async function importFile(file){
+  const st = $('#uploadStatus');
+  if (importing) return; importing = true;
+  try {
+    const isEpub = /\.epub$/i.test(file.name) || file.type === 'application/epub+zip';
+    const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
+    if (!isEpub && !isPdf){ st.textContent = 'Seequil reads EPUB and PDF files.'; return; }
+    st.textContent = 'Opening ' + file.name + '…';
+    const got = isEpub ? await readEpub(file, st) : await readPdf(file, st);
+    if (!got) return;
+    if (db && libBooks.some(b => b.id === got.id)){ st.textContent = ''; return openBook(got.id); }
+    await saveNewBook(got, st);
+  } catch(e){
+    console.error(e);
+    st.textContent = (e && e.code === 'quota_exceeded') ? 'Your storage is full. Delete a book and try again.' : (e && e.userMsg) || 'Couldn’t open that file. Is it damaged or password-protected?';
+  } finally { importing = false; }
+}
+async function saveNewBook({id, title, pages}, st){
+  book = {id, title, numPages: pages.length, page: 1, pages, codex: new Map(), entities: [], hl: [], parts: []};
+  if (db){
+    for (let g = 0; g * GROUP < pages.length; g++){
+      st.textContent = `Saving… ${Math.min((g+1)*GROUP, pages.length)} of ${pages.length} pages`;
+      await bref().collection('pages').doc('g' + g).set({g, pages: pages.slice(g*GROUP, (g+1)*GROUP).map(p => ({paras: p}))});
+    }
+    const meta = {kind:'book', id, title, numPages: pages.length, page: 1, createdAt: Date.now(), updatedAt: Date.now()};
+    await bref().set(meta);
+    libBooks.unshift(meta);
+  }
+  st.textContent = '';
+  enterReader(1);
+}
+async function readPdf(file, st){
+  if (!window.pdfjsLib){ st.textContent = 'The PDF reader didn’t load. Reload the page and try again.'; return null; }
+  const data = new Uint8Array(await file.arrayBuffer());
+  const pdf = await pdfjsLib.getDocument({data}).promise;
+  const id = ((pdf.fingerprints && pdf.fingerprints[0]) || (file.name + file.size)).replace(/[^A-Za-z0-9_-]/g,'').slice(0,40) || ('b' + Date.now());
+  let title = file.name.replace(/\.pdf$/i,'');
+  try { const meta = await pdf.getMetadata(); const t = meta && meta.info && meta.info.Title; if (t && t.trim().length > 2) title = t.trim(); } catch(e){}
+  const pages = []; let chars = 0;
+  for (let i = 1; i <= pdf.numPages; i++){
+    st.textContent = `Reading page ${i} of ${pdf.numPages}…`;
+    const paras = await extractPage(pdf, i);
+    chars += paras.join('').length;
+    pages.push(paras);
+  }
+  if (chars < 200){ st.textContent = 'This PDF doesn’t seem to have selectable text (it may be scanned images), so Seequil can’t read it.'; return null; }
+  return {id, title, pages};
+}
+
+/* EPUB: unzip, follow the reading order (spine), pull out paragraphs, cut into pages */
+function hashBytes(u8){ let h1 = 0x811c9dc5, h2 = 0x01000193 ^ u8.length; for (let i = 0; i < u8.length; i++){ h1 = Math.imul(h1 ^ u8[i], 16777619); if ((i & 7) === 0) h2 = Math.imul(h2 ^ u8[i], 2246822519); } return 'ep' + (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36) + u8.length.toString(36); }
+function joinPath(base, rel){
+  const parts = (base + rel).split('/'); const out = [];
+  for (const p of parts){ if (p === '..') out.pop(); else if (p !== '.' && p !== '') out.push(p); }
+  return out.join('/');
+}
+const xmlOf = s => new DOMParser().parseFromString(s, 'application/xml');
+const byTag = (root, tag) => [...root.getElementsByTagNameNS('*', tag)];
+async function readEpub(file, st){
+  if (!window.JSZip){ st.textContent = 'The EPUB reader didn’t load. Reload the page and try again.'; return null; }
+  const u8 = new Uint8Array(await file.arrayBuffer());
+  const zip = await JSZip.loadAsync(u8);
+  const enc = zip.file('META-INF/encryption.xml');
+  if (enc){
+    const algs = byTag(xmlOf(await enc.async('string')), 'EncryptionMethod').map(m => m.getAttribute('Algorithm') || '');
+    if (algs.some(a => !/obfuscation|embedding|font/i.test(a))){ st.textContent = 'This EPUB is copy-protected (DRM), so Seequil can’t open it. Books from stores like Kindle or Apple Books usually are.'; return null; }
+  }
+  const cont = zip.file('META-INF/container.xml');
+  if (!cont) throw {userMsg: 'That doesn’t look like a valid EPUB file.'};
+  const rf = byTag(xmlOf(await cont.async('string')), 'rootfile')[0];
+  const opfPath = rf && rf.getAttribute('full-path');
+  if (!opfPath || !zip.file(opfPath)) throw {userMsg: 'That doesn’t look like a valid EPUB file.'};
+  const base = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : '';
+  const opf = xmlOf(await zip.file(opfPath).async('string'));
+  const tEl = byTag(opf, 'title')[0];
+  const title = (tEl && tEl.textContent.trim()) || file.name.replace(/\.epub$/i, '');
+  const manifest = new Map(byTag(opf, 'item').map(it => [it.getAttribute('id'), it.getAttribute('href')]));
+  const spine = byTag(opf, 'itemref').filter(r => r.getAttribute('linear') !== 'no').map(r => manifest.get(r.getAttribute('idref'))).filter(Boolean);
+  const pages = []; let chars = 0;
+  for (let i = 0; i < spine.length; i++){
+    st.textContent = `Reading section ${i + 1} of ${spine.length}…`;
+    const path = joinPath(base, decodeURIComponent(spine[i].split('#')[0]));
+    const f = zip.file(path); if (!f) continue;
+    const src = await f.async('string');
+    let doc = new DOMParser().parseFromString(src, 'application/xhtml+xml');
+    if (doc.querySelector('parsererror')) doc = new DOMParser().parseFromString(src, 'text/html');
+    const paras = epubBlocks(doc.body || doc.documentElement);
+    if (!paras.length) continue;
+    chars += paras.join('').length;
+    pages.push(...paginate(paras));
+  }
+  if (chars < 200){ st.textContent = 'Couldn’t find any text in this EPUB.'; return null; }
+  return {id: hashBytes(u8), title, pages};
+}
+function epubBlocks(root){
+  if (!root) return [];
+  root.querySelectorAll('script,style,nav,aside[epub\\:type="footnote"]').forEach(n => n.remove());
+  const SEL = 'p,h1,h2,h3,h4,h5,h6,li,blockquote,pre,dt,dd,figcaption,td';
+  const clean = s => s.replace(/\s+/g, ' ').trim();
+  let els = [...root.querySelectorAll(SEL)].filter(e => !e.querySelector(SEL));
+  let out = els.map(e => clean(e.textContent)).filter(Boolean);
+  const total = clean(root.textContent).length;
+  if (out.join('').length < total * 0.5){
+    const divs = [...root.querySelectorAll('div')].filter(d => !d.querySelector('div,' + SEL));
+    const more = divs.map(d => clean(d.textContent)).filter(Boolean);
+    if (more.join('').length > out.join('').length) out = more;
+    if (out.join('').length < total * 0.5) out = root.textContent.split(/\n\s*\n/).map(clean).filter(Boolean);
+  }
+  return out;
+}
+function paginate(paras){
+  const TARGET = 1500, MAX = 2200;
+  const pieces = [];
+  for (const p of paras){
+    if (p.length <= MAX){ pieces.push(p); continue; }
+    let buf = '';
+    for (const s of splitSentences(p).map(x => p.slice(x.s, x.e))){
+      if (buf && (buf + s).length > TARGET){ pieces.push(buf.trim()); buf = ''; }
+      buf += s;
+    }
+    if (buf.trim()) pieces.push(buf.trim());
+  }
+  const pages = []; let cur = [], len = 0;
+  for (const p of pieces){
+    if (cur.length && len + p.length > TARGET){ pages.push(cur); cur = []; len = 0; }
+    cur.push(p); len += p.length;
+  }
+  if (cur.length) pages.push(cur);
+  return pages;
+}
+
+async function extractPage(pdf, i){
+  const page = await pdf.getPage(i);
+  const tc = await page.getTextContent();
+  const lines = []; let cur = null;
+  for (const it of tc.items){
+    if (typeof it.str !== 'string') continue;
+    const y = it.transform[5], h = Math.abs(it.transform[3]) || it.height || 10;
+    if (!cur || Math.abs(y - cur.y) > h * 0.6){ if (cur) lines.push(cur); cur = {y, h, text: ''}; }
+    if (cur.text && it.str && !/\s$/.test(cur.text) && !/^\s/.test(it.str) && it.transform[4] > (cur.lastX || 0) + h * 0.15) cur.text += ' ';
+    cur.text += it.str; cur.lastX = it.transform[4] + (it.width || 0);
+    if (it.hasEOL){ lines.push(cur); cur = null; }
+  }
+  if (cur) lines.push(cur);
+  const L = lines.map(l => ({...l, text: l.text.replace(/\s+/g,' ').trim()})).filter(l => l.text && !/^\d{1,4}$/.test(l.text));
+  if (!L.length) return [];
+  const gaps = []; for (let k = 1; k < L.length; k++){ const g = L[k-1].y - L[k].y; if (g > 0) gaps.push(g); }
+  gaps.sort((a,b)=>a-b); const med = gaps.length ? gaps[Math.floor(gaps.length/2)] : 14;
+  const maxLen = Math.max(...L.map(l => l.text.length));
+  const paras = []; let buf = L[0].text;
+  for (let k = 1; k < L.length; k++){
+    const prev = L[k-1], ln = L[k], gap = prev.y - ln.y;
+    const shortEnd = prev.text.length < maxLen * 0.72 && /[.!?:"”’)]$/.test(prev.text);
+    if (gap > med * 1.4 || gap < -2 || shortEnd){ paras.push(buf); buf = ln.text; continue; }
+    if (/[A-Za-z]-$/.test(buf) && /^[a-z]/.test(ln.text)) buf = buf.slice(0,-1) + ln.text; else buf += ' ' + ln.text;
+  }
+  paras.push(buf);
+  return paras.map(p => p.trim()).filter(Boolean);
+}
+
+/* ---------- open book ---------- */
+async function openBook(id){
+  if (!db){ if (book && book.id === id) enterReader(P); return; }
+  const st = $('#uploadStatus'); st.textContent = 'Opening…';
+  try {
+    const ref = userCol().doc('book_' + id);
+    const [meta, pg, cx, hl, pt] = await withTimeout(Promise.all([ref.get(), ref.collection('pages').get(), ref.collection('codex').get(), ref.collection('hl').get(), ref.collection('parts').get()]), 15000);
+    if (!meta.exists){ st.textContent = 'That book is missing.'; return; }
+    const m = meta.data();
+    const pages = [];
+    pg.docs.map(d => d.data()).sort((a,b)=>a.g-b.g).forEach(g => (g.pages||[]).forEach(p => pages.push(p.paras || [])));
+    book = {id, title: m.title, numPages: m.numPages, page: m.page || 1, pages, codex: new Map(), entities: [], hl: hl.docs.map(d => d.data()), parts: pt.docs.map(d => ({...d.data()}))};
+    cx.docs.forEach(d => { const c = d.data(); book.codex.set(c.idx, c); });
+    rebuildEntities();
+    st.textContent = '';
+    enterReader(m.page || 1);
+  } catch(e){ st.textContent = 'Couldn’t open that book right now. Try again.'; }
+}
+
+function enterReader(page){
+  artCache.forEach(a => a.url && URL.revokeObjectURL(a.url)); artCache.clear(); artQueue.length = 0;
+  partArt.forEach(a => a.url && URL.revokeObjectURL(a.url)); partArt.clear(); activePart = null;
+  if (!book.parts) book.parts = [];
+  book.parts.forEach(p => { if (p.img || p.svg) setPartArt(p.id, p.svg, p.img); });
+  $('#library').hidden = true; $('#reader').hidden = false;
+  $('#bTitle').textContent = book.title;
+  const s = $('#pgSlider'); s.max = book.numPages;
+  goPage(page);
+}
+$('#toLib').onclick = () => { stopTts(); hideSel(); closeOverlay(); $('#reader').hidden = true; $('#library').hidden = false; book && db && loadLibrary(); renderLibrary(); };
+
+/* ---------- pages ---------- */
+const saveProgress = debounce(async () => {
+  if (!db || !book) return;
+  try { await bref().update({page: P, updatedAt: Date.now()}); const lb = libBooks.find(b=>b.id===book.id); if (lb){ lb.page = P; lb.updatedAt = Date.now(); } } catch(e){}
+}, 1500);
+function goPage(n, keepTts){
+  n = Math.max(1, Math.min(book.numPages, n|0));
+  if (!keepTts) stopTts();
+  hideSel();
+  P = n; book.page = n; activePart = null;
+  $('#bPage').textContent = `Page ${P} of ${book.numPages}`;
+  $('#pageNum').textContent = 'PAGE ' + P;
+  $('#pgSlider').value = P;
+  renderText();
+  $('#textpane').scrollTop = 0;
+  saveProgress();
+  renderScene(); requestArt(P, true);
+  ensureCodex();
+}
+$('#prevPg').onclick = () => goPage(P - 1);
+$('#nextPg').onclick = () => goPage(P + 1);
+$('#pgSlider').addEventListener('change', e => goPage(+e.target.value));
+$('#pgSlider').addEventListener('input', e => { $('#bPage').textContent = `Page ${e.target.value} of ${book.numPages}`; });
+document.addEventListener('keydown', e => {
+  if ($('#reader').hidden || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement && document.activeElement.tagName)) return;
+  if (e.key === 'ArrowRight') goPage(P + 1);
+  else if (e.key === 'ArrowLeft') goPage(P - 1);
+  else if (e.key === 'Escape'){ hideSel(); closeOverlay(); }
+});
+
+let tX=null,tY=0;
+$('#textpane').addEventListener('touchstart', e => { const t = e.touches[0]; tX = t.clientX; tY = t.clientY; }, {passive:true});
+$('#textpane').addEventListener('touchend', e => {
+  if (tX === null) return; const t = e.changedTouches[0]; const dx = t.clientX - tX, dy = t.clientY - tY; tX = null;
+  const sel = window.getSelection(); if (sel && !sel.isCollapsed) return;
+  if (Math.abs(dx) > 70 && Math.abs(dy) < 50) goPage(P + (dx < 0 ? 1 : -1));
+}, {passive:true});
+
+/* ---------- text rendering ---------- */
+let pageSents = [];
+function splitSentences(text){
+  const out = []; const re = /[^.!?…]*[.!?…]+["'”’)\]]*\s*|[^.!?…]+$/g; let m;
+  while ((m = re.exec(text))){ if (!m[0]){ re.lastIndex++; continue; } out.push({s: m.index, e: m.index + m[0].length}); }
+  return out.length ? out : [{s:0, e:text.length}];
+}
+function visibleEntities(){ return book.entities.filter(en => en.firstPage <= P); }
+function entityMatcher(ents){
+  const map = new Map();
+  for (const en of ents){
+    for (const n of [en.name, ...en.aliases]){
+      if (!n || n.length < 3 || !/^\p{Lu}/u.test(n) || /^(The|A|An|He|She|It|They|His|Her)$/.test(n)) continue;
+      if (!map.has(n)) map.set(n, en.id);
+    }
+  }
+  if (!map.size) return null;
+  const names = [...map.keys()].sort((a,b)=>b.length-a.length).map(n => n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+  return {map, rx: new RegExp('(?<![\\p{L}\\p{N}])(?:' + names.join('|') + ')(?![\\p{L}\\p{N}])', 'gu')};
+}
+function renderText(){
+  const wrap = $('#pageText'); wrap.textContent = '';
+  pageSents = [];
+  const paras = book.pages[P-1] || [];
+  if (!paras.length){ wrap.innerHTML = '<p class="empty-page">No text on this page.</p>'; return; }
+  const em = entityMatcher(visibleEntities());
+  const hls = book.hl.filter(h => h.page === P);
+  paras.forEach((text, pi) => {
+    const p = document.createElement('p');
+    const sents = splitSentences(text), base = pageSents.length;
+    sents.forEach(s => pageSents.push({p: pi, s: s.s, e: s.e, text: text.slice(s.s, s.e).trim()}));
+    const ents = [];
+    if (em){ em.rx.lastIndex = 0; let m; while ((m = em.rx.exec(text))) ents.push({s: m.index, e: m.index + m[0].length, id: em.map.get(m[0])}); }
+    const ph = hls.filter(h => h.para === pi);
+    const pp = (book.parts || []).filter(x => x.page === P && pi >= x.ps && pi <= x.pe); const placed = new Set();
+    const re = /\S+|\s+/g; let m;
+    while ((m = re.exec(text))){
+      const s = m.index, e = s + m[0].length, sp = /^\s/.test(m[0]);
+      const span = document.createElement('span');
+      span.className = sp ? 'sp' : 'tok'; span.textContent = m[0];
+      span.dataset.p = pi; span.dataset.s = s; span.dataset.e = e;
+      const si = sents.findIndex(x => s >= x.s && s < x.e); span.dataset.sent = base + Math.max(0, si);
+      const h = ph.find(h => sp ? (s >= h.s && e <= h.e) : (s < h.e && e > h.s));
+      if (h){ span.style.background = HL[h.color] || HL.yellow; span.dataset.hl = h.id; if (!sp && h.note && e >= h.e) span.classList.add('note-end'); }
+      if (!sp){ const en = ents.find(r => s >= r.s && s < r.e); if (en){ span.classList.add('ent'); span.dataset.ent = en.id; span.tabIndex = 0; span.setAttribute('role','button'); } }
+      const part = pp.find(x => (pi > x.ps || s >= x.s) && (pi < x.pe || s < x.e));
+      if (part){
+        span.dataset.part = part.id;
+        if (!sp && pi === part.ps && !placed.has(part.id)){
+          placed.add(part.id);
+          const mk = document.createElement('button'); mk.className = 'part-mark' + (activePart === part.id ? ' on' : ''); mk.dataset.mark = part.id;
+          mk.setAttribute('aria-label', 'Show the picture for this passage'); mk.innerHTML = svgI('image'); p.appendChild(mk);
+        }
+      }
+      p.appendChild(span);
+    }
+    wrap.appendChild(p);
+  });
+}
+const tp = $('#textpane');
+tp.addEventListener('click', e => {
+  const sel = window.getSelection(); if (sel && !sel.isCollapsed && sel.toString().trim()) return;
+  const mk = e.target.closest('[data-mark]'); if (mk){ setActivePart(activePart === mk.dataset.mark ? null : mk.dataset.mark); return; }
+  const ent = e.target.closest('.ent'); if (ent){ openCard(ent.dataset.ent); return; }
+  const h = e.target.closest('[data-hl]'); if (h){ const hl = book.hl.find(x => x.id === h.dataset.hl); if (hl) showSelBar({mode:'edit', hl}, h.getBoundingClientRect()); return; }
+  hideSel();
+  const pt = e.target.closest('[data-part]'); setActivePart(pt ? pt.dataset.part : null);
+});
+tp.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('ent')){ e.preventDefault(); openCard(e.target.dataset.ent); } });
+
+/* ---------- selection & highlights ---------- */
+let selCtx = null;
+function tokFrom(node, offset){
+  let el = node.nodeType === 3 ? node.parentElement : node;
+  if (el && el.tagName === 'P') el = el.childNodes[Math.min(offset, el.childNodes.length - 1)];
+  if (el && el.nodeType === 3) el = el.parentElement;
+  return el && el.dataset && el.dataset.s !== undefined ? el : null;
+}
+function rangesFromSelection(){
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+  const r = sel.getRangeAt(0);
+  if (!tp.contains(r.commonAncestorContainer)) return null;
+  const a = tokFrom(r.startContainer, r.startOffset), b = tokFrom(r.endContainer, Math.max(0, r.endOffset - 1));
+  if (!a || !b) return null;
+  const pa = +a.dataset.p, pb = +b.dataset.p;
+  let sa = a.classList.contains('sp') ? +a.dataset.e : +a.dataset.s;
+  let eb = b.classList.contains('sp') ? +b.dataset.s : +b.dataset.e;
+  const paras = book.pages[P-1]; const out = [];
+  for (let pi = pa; pi <= pb; pi++){
+    const text = paras[pi]; let s = pi === pa ? sa : 0, e = pi === pb ? eb : text.length;
+    while (s < e && /\s/.test(text[s])) s++; while (e > s && /\s/.test(text[e-1])) e--;
+    if (e > s) out.push({para: pi, s, e, text: text.slice(s, e)});
+  }
+  return out.length ? {ranges: out, rect: r.getBoundingClientRect()} : null;
+}
+document.addEventListener('selectionchange', debounce(() => {
+  if ($('#reader').hidden) return;
+  const got = rangesFromSelection();
+  if (got) showSelBar({mode:'new', ranges: got.ranges}, got.rect);
+  else if (selCtx && selCtx.mode === 'new') hideSel();
+}, 250));
+function showSelBar(ctx, rect){
+  selCtx = ctx;
+  const bar = $('#selBar');
+  const cur = ctx.mode === 'edit' ? ctx.hl.color : null;
+  bar.innerHTML = Object.entries(HL).map(([k,v]) => `<button class="dot${cur===k?' cur':''}" data-c="${k}" aria-label="${k} highlight"><span style="background:${v}"></span></button>`).join('') +
+    `<span class="div"></span><button class="act" data-a="note">${svgI('note')}Note</button><button class="act" data-a="copy">${svgI('copy')}Copy</button>` +
+    (ctx.mode === 'new' ? `<button class="act" data-a="read">${svgI('speak')}Read from here</button><button class="act" data-a="part">${svgI('image')}Picture this</button>` : `<button class="act" data-a="del">${svgI('trash')}Remove</button>`);
+  bar.hidden = false;
+  const bw = bar.offsetWidth, bh = bar.offsetHeight;
+  const coarse = matchMedia('(pointer:coarse)').matches;
+  let top = coarse ? rect.bottom + 10 : rect.top - bh - 10;
+  if (top < 8) top = rect.bottom + 10;
+  if (top + bh > innerHeight - 90) top = Math.max(8, rect.top - bh - 10);
+  bar.style.top = top + 'px';
+  bar.style.left = Math.max(8, Math.min(innerWidth - bw - 8, rect.left + rect.width/2 - bw/2)) + 'px';
+}
+function hideSel(){ $('#selBar').hidden = true; selCtx = null; }
+$('#selBar').addEventListener('mousedown', e => e.preventDefault());
+$('#selBar').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b || !selCtx) return;
+  const ctx = selCtx;
+  if (b.dataset.c){
+    if (ctx.mode === 'new'){ await addHighlights(ctx.ranges, b.dataset.c); window.getSelection().removeAllRanges(); }
+    else { ctx.hl.color = b.dataset.c; await saveHl(ctx.hl); }
+    hideSel(); renderText(); return;
+  }
+  const a = b.dataset.a;
+  const text = ctx.mode === 'new' ? ctx.ranges.map(r => r.text).join(' ') : ctx.hl.text;
+  if (a === 'copy'){ try { await navigator.clipboard.writeText(text); toast('Copied'); } catch(err){ toast('Couldn’t copy'); } hideSel(); }
+  else if (a === 'read'){ const r = ctx.ranges[0]; const idx = pageSents.findIndex(s => s.p === r.para && r.s >= s.s && r.s < s.e); window.getSelection().removeAllRanges(); hideSel(); startTts(Math.max(0, idx)); }
+  else if (a === 'del'){ await removeHl(ctx.hl); hideSel(); renderText(); }
+  else if (a === 'part'){ window.getSelection().removeAllRanges(); hideSel(); createPart(ctx.ranges); }
+  else if (a === 'note'){
+    let hl = ctx.hl;
+    if (ctx.mode === 'new'){ const made = await addHighlights(ctx.ranges, 'yellow'); hl = made[0]; window.getSelection().removeAllRanges(); renderText(); }
+    hideSel(); if (hl) noteDialog(hl);
+  }
+});
+async function addHighlights(ranges, color){
+  const made = ranges.map(r => ({id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2,6), page: P, para: r.para, s: r.s, e: r.e, text: r.text, color, note: '', at: Date.now()}));
+  book.hl.push(...made);
+  for (const h of made) await saveHl(h);
+  return made;
+}
+async function saveHl(h){ if (!db) return; try { await bref().collection('hl').doc(h.id).set({...h}); } catch(e){ toast('Couldn’t save that highlight'); } }
+async function removeHl(h){ book.hl = book.hl.filter(x => x.id !== h.id); if (db){ try { await bref().collection('hl').doc(h.id).delete(); } catch(e){} } }
+function noteDialog(hl){
+  const ov = $('#overlay');
+  ov.innerHTML = `<div class="scrim" data-close></div><div class="modal" role="dialog" aria-modal="true" aria-labelledby="ndT"><b id="ndT">Note on page ${hl.page}</b><div class="muted" style="font-family:Literata,serif">“${esc(hl.text.length > 160 ? hl.text.slice(0,160) + '…' : hl.text)}”</div><label for="ndX" class="muted" style="font-size:13px">Your note</label><textarea id="ndX">${esc(hl.note)}</textarea><div class="row"><button class="btn" data-close>Cancel</button><button class="btn primary" id="ndS">Save note</button></div></div>`;
+  ov.querySelectorAll('[data-close]').forEach(x => x.onclick = closeOverlay);
+  $('#ndX').focus();
+  $('#ndS').onclick = async () => { hl.note = $('#ndX').value.trim(); await saveHl(hl); closeOverlay(); renderText(); };
+}
+
+/* ---------- panels ---------- */
+function closeOverlay(){ $('#overlay').innerHTML = ''; ['#memBtn','#hlBtn','#setBtn'].forEach(s => $(s).classList.remove('on')); }
+function panel(title, bodyHtml, btn){
+  closeOverlay(); hideSel();
+  const ov = $('#overlay');
+  ov.innerHTML = `<div class="scrim" data-close></div><aside class="panel" role="dialog" aria-modal="true" aria-label="${esc(title)}"><header><h2>${esc(title)}</h2><button class="icon-btn" data-close aria-label="Close">${svgI('close')}</button></header><div class="body">${bodyHtml}</div></aside>`;
+  ov.querySelectorAll('[data-close]').forEach(x => x.onclick = closeOverlay);
+  if (btn) $(btn).classList.add('on');
+  return ov.querySelector('.body');
+}
+
+/* Highlights list */
+$('#hlBtn').onclick = () => {
+  const list = [...book.hl].sort((a,b) => a.page - b.page || a.para - b.para || a.s - b.s);
+  const body = panel('Highlights', list.length ? '' : '<p class="muted">Select any text on a page to highlight it, add a note, or give it its own picture.</p>', '#hlBtn');
+  const parts = [...(book.parts || [])].sort((a,b) => a.page - b.page || a.ps - b.ps || a.s - b.s);
+  if (parts.length){
+    const h = document.createElement('h3'); h.className = 'h3'; h.textContent = 'Passage pictures'; body.appendChild(h);
+    for (const pt of parts){
+      const it = document.createElement('div'); it.className = 'hl-item';
+      it.innerHTML = `<q>${esc(pt.text.length > 220 ? pt.text.slice(0, 220) + '…' : pt.text)}</q><div class="row"><button class="btn small" data-go>Page ${pt.page}</button><button class="btn small" data-d>Remove</button></div>`;
+      it.querySelector('[data-go]').onclick = () => { closeOverlay(); goPage(pt.page); setActivePart(pt.id); };
+      it.querySelector('[data-d]').onclick = async () => { await removePart(pt.id); it.remove(); };
+      body.appendChild(it);
+    }
+    if (list.length){ const h2 = document.createElement('h3'); h2.className = 'h3'; h2.textContent = 'Highlights'; body.appendChild(h2); }
+  }
+  for (const h of list){
+    const it = document.createElement('div'); it.className = 'hl-item';
+    it.innerHTML = `<q style="background:${HL[h.color]||HL.yellow}">${esc(h.text)}</q>${h.note ? `<div class="n">${esc(h.note)}</div>` : ''}<div class="row"><button class="btn small" data-go>Page ${h.page}</button><button class="btn small" data-n>${h.note ? 'Edit note' : 'Add note'}</button><button class="btn small" data-d>Remove</button></div>`;
+    it.querySelector('[data-go]').onclick = () => { closeOverlay(); goPage(h.page); };
+    it.querySelector('[data-n]').onclick = () => noteDialog(h);
+    it.querySelector('[data-d]').onclick = async () => { await removeHl(h); it.remove(); renderText(); };
+    body.appendChild(it);
+  }
+};
+
+/* Settings */
+const openSettings = () => $('#setBtn').click();
+$('#setBtn').onclick = () => {
+  const voices = ('speechSynthesis' in window) ? speechSynthesis.getVoices() : [];
+  const vOpts = '<option value="">Default voice</option>' + voices.filter(v => /^en/i.test(v.lang) || voices.length < 25).map(v => `<option value="${esc(v.voiceURI)}"${v.voiceURI===settings.voice?' selected':''}>${esc(v.name)} (${esc(v.lang)})</option>`).join('');
+  const sel = (v, cur) => v === cur ? ' selected' : '';
+  const num = (id, v, step) => `<input class="search" type="number" min="0" step="${step}" id="${id}" value="${esc(v)}">`;
+  const body = panel('Settings', `
+    <div class="field"><label>Text size</label><div class="seg"><button class="btn" id="fsDn" aria-label="Smaller text">A−</button><button class="btn" id="fsUp" aria-label="Larger text">A+</button><span class="muted" id="fsV" style="align-self:center">${settings.fs}px</span></div></div>
+    <div class="field"><label for="voiceSel">Read-aloud voice</label><select id="voiceSel">${vOpts}</select></div>
+    <h3 class="h3">Pictures and memory</h3>
+    <div class="field"><label class="switch"><input type="checkbox" id="aiTog"${settings.ai?' checked':''}> Turn on pictures and memory</label></div>
+    <div class="field"><label for="picSrc">Pictures come from</label><select id="picSrc">
+      <option value="openai"${sel('openai', settings.picSource)}>ChatGPT images (OpenAI key)</option>
+      <option value="claude"${sel('claude', settings.picSource)}>Claude drawings (Anthropic key)</option>
+      <option value="own"${sel('own', settings.picSource)}>Only my own uploads</option></select></div>
+    <div class="field"><label for="picQ">ChatGPT picture quality</label><select id="picQ">
+      <option value="low"${sel('low', settings.picQuality)}>Low (about $${Number(settings.costLow).toFixed(3)} each)</option>
+      <option value="medium"${sel('medium', settings.picQuality)}>Medium (about $${Number(settings.costMed).toFixed(3)} each)</option></select></div>
+    <div class="field"><label for="txtSrc">Memory and prompts use</label><select id="txtSrc">
+      <option value="openai"${sel('openai', settings.textProvider)}>OpenAI (cheapest)</option>
+      <option value="anthropic"${sel('anthropic', settings.textProvider)}>Claude (Anthropic key)</option></select></div>
+    <div class="field"><label for="styleIn">Picture style</label><input class="search" id="styleIn" value="${esc(settings.style || DEFAULT_STYLE)}"><div class="muted" style="font-size:14px">Added to every picture prompt so pictures keep one look.</div></div>
+    <h3 class="h3">API keys</h3>
+    <div class="field"><label for="oaKey">OpenAI API key</label><input class="search" type="password" id="oaKey" autocomplete="off" spellcheck="false" placeholder="sk-…" value="${esc(settings.oaKey)}"></div>
+    <div class="field"><label for="anKey">Anthropic API key (optional, for Claude)</label><input class="search" type="password" id="anKey" autocomplete="off" spellcheck="false" placeholder="sk-ant-…" value="${esc(settings.anKey)}"></div>
+    <div class="muted" style="font-size:14px">Keys stay in this browser and are sent only to OpenAI or Anthropic. Backups never include them.</div>
+    <h3 class="h3">Spending</h3>
+    <div class="field"><label for="budIn">Monthly budget in dollars (0 = no limit)</label>${num('budIn', settings.budget, '0.5')}<div class="muted" id="spentV" style="font-size:14px">${spentLine()}</div><button class="btn small" id="spReset" style="align-self:flex-start">Reset this month’s count</button><div class="muted" style="font-size:14px">Seequil stops calling OpenAI or Anthropic when it reaches this. Amounts are estimates; your provider’s billing page has the real numbers.</div></div>
+    <details><summary style="cursor:pointer;font-weight:600;min-height:32px">Advanced: models and prices</summary><div style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
+      <div class="field"><label for="oaText">OpenAI text model</label><input class="search" id="oaText" value="${esc(settings.oaText)}"></div>
+      <div class="field"><label for="oaImage">OpenAI image model</label><input class="search" id="oaImage" value="${esc(settings.oaImage)}"></div>
+      <div class="field"><label for="anModel">Claude model for drawings and memory</label><input class="search" id="anModel" value="${esc(settings.anModel)}"></div>
+      <div class="field"><label for="anQuick">Claude model for quick jobs</label><input class="search" id="anQuick" value="${esc(settings.anQuick)}"></div>
+      <div class="field"><label for="costLow">Cost per low-quality picture ($)</label>${num('costLow', settings.costLow, '0.001')}</div>
+      <div class="field"><label for="costMed">Cost per medium picture ($)</label>${num('costMed', settings.costMed, '0.001')}</div>
+      <div class="field"><label for="oaIn">OpenAI text: $ per million tokens in / out</label><div class="seg">${num('oaIn', settings.oaIn, '0.01')}${num('oaOut', settings.oaOut, '0.01')}</div></div>
+      <div class="field"><label for="anIn">Claude: $ per million tokens in / out</label><div class="seg">${num('anIn', settings.anIn, '0.01')}${num('anOut', settings.anOut, '0.01')}</div></div>
+    </div></details>
+    ${book ? '<h3 class="h3">This book</h3><div class="field"><button class="btn" id="saveAll" style="align-self:flex-start">Save all pictures (.zip)</button><div class="muted" style="font-size:14px">Every page and passage picture so far.</div></div>' : ''}`, '#setBtn');
+  const sa = $('#saveAll'); if (sa) sa.onclick = () => saveAllPictures(sa);
+  const bind = (id, key, conv) => { const el = $('#' + id); if (el) el.onchange = e => { settings[key] = conv ? conv(e.target.value) : e.target.value.trim(); if (/Key$/.test(key)){ aiBlocked = false; lastKeyMsg = ''; } saveSettings(); renderScene(); if (book){ requestArt(P, true, true); ensureCodex(); } }; };
+  const n = v => Math.max(0, Number(v) || 0);
+  bind('picSrc', 'picSource'); bind('picQ', 'picQuality'); bind('txtSrc', 'textProvider'); bind('oaKey', 'oaKey'); bind('anKey', 'anKey');
+  bind('budIn', 'budget', n); bind('oaText', 'oaText'); bind('oaImage', 'oaImage'); bind('anModel', 'anModel'); bind('anQuick', 'anQuick');
+  ['costLow','costMed','oaIn','oaOut','anIn','anOut'].forEach(k => bind(k, k, n));
+  $('#budIn').addEventListener('change', () => { $('#spentV').textContent = spentLine(); });
+  $('#spReset').onclick = () => { settings.spend = {month: monthNow(), usd: 0}; saveSettings(); $('#spentV').textContent = spentLine(); renderScene(); };
+  $('#styleIn').onchange = e => { settings.style = e.target.value.trim() || DEFAULT_STYLE; saveSettings(); };
+  const setFs = d => { settings.fs = Math.max(14, Math.min(28, settings.fs + d)); $('#fsV').textContent = settings.fs + 'px'; applySettings(); saveSettings(); };
+  $('#fsDn').onclick = () => setFs(-1); $('#fsUp').onclick = () => setFs(1);
+  $('#voiceSel').onchange = e => { settings.voice = e.target.value; saveSettings(); };
+  $('#aiTog').onchange = e => { if (e.target.checked){ settings.ai = true; aiBlocked = false; saveSettings(); if (book){ renderScene(); requestArt(P, true, true); ensureCodex(); } } else { settings.ai = false; saveSettings(); renderScene(); } };
+};
+if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = () => {};
+
+/* ---------- read aloud ---------- */
+let tts = {on: false, i: 0, gen: 0};
+const playIco = on => { $('#playIco').innerHTML = on ? ICON.pause : ICON.play; $('#playBtn').setAttribute('aria-label', on ? 'Pause reading' : 'Read aloud'); };
+function clearSay(){ document.querySelectorAll('.say-sent,.say-word').forEach(n => n.classList.remove('say-sent','say-word')); }
+function markSent(i){
+  clearSay(); const ns = document.querySelectorAll(`#pageText [data-sent="${i}"]`); ns.forEach(n => n.classList.add('say-sent')); if (ns[0]) ns[0].scrollIntoView({block:'nearest', behavior:'smooth'});
+  const sent = pageSents[i];
+  if (sent && tts.on){ const at = sent.s + sentOffset(sent); const pt = (book.parts || []).find(x => x.page === P && (sent.p > x.ps || (sent.p === x.ps && at >= x.s)) && (sent.p < x.pe || (sent.p === x.pe && at < x.e))); setActivePart(pt ? pt.id : null); }
+}
+function markWord(sent, ci){
+  document.querySelectorAll('.say-word').forEach(n => n.classList.remove('say-word'));
+  const abs = sent.s + (sent.text ? (sentOffset(sent) + ci) : 0);
+  const toks = document.querySelectorAll(`#pageText p:nth-child(${sent.p + 1}) .tok`);
+  for (const t of toks){ if (abs >= +t.dataset.s && abs < +t.dataset.e){ t.classList.add('say-word'); break; } }
+}
+function sentOffset(sent){ const raw = (book.pages[P-1][sent.p] || '').slice(sent.s, sent.e); return raw.length - raw.trimStart().length; }
+function speak(i){
+  const g = ++tts.gen;
+  speechSynthesis.cancel();
+  while (i < pageSents.length && !pageSents[i].text) i++;
+  if (i >= pageSents.length){
+    if (P < book.numPages){ goPage(P + 1, true); setTimeout(() => { if (tts.on && g === tts.gen) speak(0); }, 350); }
+    else stopTts();
+    return;
+  }
+  tts.i = i; const sent = pageSents[i];
+  const u = new SpeechSynthesisUtterance(sent.text);
+  u.rate = settings.rate;
+  const v = settings.voice && speechSynthesis.getVoices().find(x => x.voiceURI === settings.voice); if (v) u.voice = v;
+  u.onstart = () => { if (g === tts.gen) markSent(i); };
+  u.onboundary = e => { if (g === tts.gen && e.name !== 'sentence') markWord(sent, e.charIndex); };
+  u.onend = () => { if (g === tts.gen && tts.on) speak(i + 1); };
+  u.onerror = e => { if (g === tts.gen && e.error !== 'interrupted' && e.error !== 'canceled'){ stopTts(); toast('Read-aloud stopped: ' + e.error); } };
+  markSent(i);
+  $('#ttsLbl').textContent = 'Reading aloud · follows along in the text';
+  speechSynthesis.speak(u);
+}
+function startTts(i){
+  if (!('speechSynthesis' in window)){ toast('Read-aloud isn’t supported in this browser'); return; }
+  tts.on = true; playIco(true); speak(i);
+}
+function stopTts(){ tts.gen++; tts.on = false; if ('speechSynthesis' in window) speechSynthesis.cancel(); playIco(false); clearSay(); $('#ttsLbl').textContent = 'Tap play to read aloud'; }
+$('#playBtn').onclick = () => tts.on ? (() => { const i = tts.i; stopTts(); tts.i = i; $('#ttsLbl').textContent = 'Paused'; })() : startTts(tts.i < pageSents.length ? tts.i : 0);
+$('#backS').onclick = () => tts.on ? speak(Math.max(0, tts.i - 1)) : (tts.i = Math.max(0, tts.i - 1), markSent(tts.i));
+$('#fwdS').onclick = () => tts.on ? speak(tts.i + 1) : (tts.i = Math.min(pageSents.length - 1, tts.i + 1), markSent(tts.i));
+$('#rateSel').onchange = e => { settings.rate = +e.target.value; saveSettings(); if (tts.on) speak(tts.i); };
+
+/* ---------- pictures ---------- */
+const artCache = new Map(); const artQueue = []; let artBusy = false;
+function picBlockReason(){
+  if (!settings.ai) return 'off';
+  if (settings.picSource === 'own') return 'own';
+  if (budgetHit()) return 'budget';
+  if (aiBlocked) return 'key';
+  if (settings.picSource === 'openai' && !settings.oaKey) return 'needOa';
+  if (settings.picSource === 'claude' && !settings.anKey) return 'needAn';
+  return '';
+}
+function sceneNote(why){
+  const M = {
+    off: ['See every page', 'Turn on pictures and memory to get a picture for each page and spoiler-free notes on people, places and events.', 'Turn on', enableAi],
+    own: ['Your own pictures', 'Tap the clipboard button to copy a prompt for any image generator, then upload or paste the picture here.', '', null],
+    budget: ['Monthly budget reached', `You’ve used this month’s $${Number(settings.budget).toFixed(2)} budget. Raise it in settings or wait until next month. Reading, highlights and read-aloud still work.`, 'Open settings', openSettings],
+    key: ['The AI service said no', lastKeyMsg || 'Check your API key in settings.', 'Open settings', openSettings],
+    needOa: ['Add your OpenAI key', 'Pictures are set to ChatGPT images. Paste an OpenAI API key in settings.', 'Open settings', openSettings],
+    needAn: ['Add your Anthropic key', 'Pictures are set to Claude drawings, which need an Anthropic API key. Add one in settings, or switch pictures to ChatGPT images.', 'Open settings', openSettings]
+  }[why];
+  const msg = $('#sceneMsg');
+  msg.innerHTML = `<h3>${esc(M[0])}</h3><div>${esc(M[1])}</div>${M[2] ? `<button class="btn gold" id="sceneAct">${esc(M[2])}</button>` : ''}`;
+  if (M[2]) $('#sceneAct').onclick = M[3];
+}
+function renderScene2(){
+  const msg = $('#sceneMsg'), pill = $('#scenePill');
+  pill.hidden = true; msg.innerHTML = ''; setImgActions([]);
+  const why = picBlockReason();
+  if (activePart){
+    const part = book.parts.find(x => x.id === activePart), a = partArt.get(activePart);
+    if (a && a.status === 'ready'){ showImg(a, 'Illustration for the selected passage', `passage-page-${part.page}`); pill.hidden = false; pill.textContent = 'Picture for this passage'; setImgActions(['back','redraw','save','delpart']); return; }
+    hideImg(); setImgActions(['back','delpart']);
+    if (why){ sceneNote(why); return; }
+    if (a && a.status === 'error'){ msg.innerHTML = '<div>Couldn’t draw this passage.</div><button class="btn gold" id="partRetry">Try again</button>'; $('#partRetry').onclick = () => drawPart(part, true); return; }
+    pill.hidden = false; pill.innerHTML = '<span class="spin" aria-hidden="true"></span>Drawing this passage…'; return;
+  }
+  const a = artCache.get(P);
+  let pick = a && a.status === 'ready' ? a : null, fromEarlier = false;
+  if (!pick && a && a.status === 'none'){ for (let k = P - 1; k >= Math.max(1, P - 6); k--){ const b = artCache.get(k); if (b && b.status === 'ready'){ pick = b; fromEarlier = true; break; } } }
+  if (pick){
+    showImg(pick, 'Illustration for page ' + P, `page-${P}`);
+    setImgActions(fromEarlier ? ['save'] : ['redraw','save']);
+    if (fromEarlier){ pill.hidden = false; pill.textContent = 'Picture from an earlier page'; }
+    return;
+  }
+  hideImg();
+  if (a && a.status === 'none'){ msg.innerHTML = '<div style="color:#C9CEDD">No scene on this page.</div>'; return; }
+  if (why){ sceneNote(why); return; }
+  if (a && a.status === 'error'){ msg.innerHTML = `<div>${esc(a.msg || 'Couldn’t draw this page.')}</div><button class="btn gold" id="artRetry">Try again</button>`; $('#artRetry').onclick = () => { artCache.delete(P); requestArt(P, true, true); }; return; }
+  pill.hidden = false; pill.innerHTML = '<span class="spin" aria-hidden="true"></span>Drawing this page…';
+}
+function enableAi(){
+  if (!settings.oaKey && !settings.anKey){ openSettings(); toast('Add an API key first'); return; }
+  settings.ai = true; aiBlocked = false; saveSettings();
+  renderScene(); requestArt(P, true, true); ensureCodex();
+}
+async function writeImagePrompt(t, allowNone){
+  if (!textReady()) return templatePrompt(t);
+  const known = knownFor(t.text, t.page);
+  const r = await callText(`Write a prompt for an AI image generator (such as ChatGPT images, Midjourney or Gemini) that illustrates ${t.kind === 'part' ? 'this passage' : 'the main moment on this page'} of the book "${book.title}".
+- 60 to 120 words, one paragraph, plain text, no labels or quote marks.
+- Describe what to see: the setting, who is there and what they look like, what they are doing, the lighting, the mood and the framing.
+- Describe characters by how they look, not only by name.
+- Use only what the text shows. Nothing from later in the book, even if you recognize it.
+- End with exactly this style: ${settings.style || DEFAULT_STYLE}. No text or lettering in the image.${allowNone ? '\n- If the text has no scene to picture (title page, copyright, contents, acknowledgments, index), reply with exactly NONE.' : ''}
+${known ? 'Known characters and places:\n' + known + '\n' : ''}
+TEXT:
+"""
+${t.text.slice(0, 5000)}
+"""
+Reply with just the prompt.`, {modelTier: 'quick'});
+  const txt = String((r && r.text) || '').trim().replace(/^["“]|["”]$/g, '');
+  if (/^NONE\b/.test(txt)) return 'NONE';
+  return txt || templatePrompt(t);
+}
+async function openaiPicture(t, allowNone){
+  let p = promptCache.get(t.key);
+  if (!p) p = await writeImagePrompt(t, allowNone);
+  if (p === 'NONE') return 'NONE';
+  promptCache.set(t.key, p);
+  return await openaiImage(p);
+}
+const ART_RULES = `Rules:
+- Reply with only a single <svg> element. No markdown fences, no commentary.
+- Use viewBox="0 0 600 700" and xmlns="http://www.w3.org/2000/svg".
+- Style: painterly flat vector art, layered shapes, soft gradients, a cohesive limited palette, atmospheric light. People are simple stylized figures or silhouettes, no detailed faces.
+- No text, letters or numbers anywhere in the picture.
+- No <script>, <foreignObject>, <image>, external links or animation.
+- Keep it under about 10,000 characters.
+- Show only what the text describes. Never add anything from later in the book, even if you recognize the book.`;
+function knownFor(text, page){
+  return visibleEntities().filter(en => en.firstPage <= page && (en.type === 'character' || en.type === 'place') && [en.name, ...en.aliases].some(n => n && text.includes(n))).slice(0, 8)
+    .map(en => `- ${en.name} (${en.type}): ${en.description || ''}`).join('\n');
+}
+let shown = null; // {url, svg, name}
+function showImg(entry, alt, name){
+  const img = $('#sceneImg');
+  if (img.getAttribute('src') !== entry.url){ img.classList.remove('show'); img.onload = () => img.classList.add('show'); img.src = entry.url; } else img.classList.add('show');
+  img.alt = alt; shown = {url: entry.url, svg: entry.svg, img: entry.img, name};
+}
+function hideImg(){ const img = $('#sceneImg'); img.classList.remove('show'); img.removeAttribute('src'); img.alt = ''; shown = null; }
+function setImgActions(list){
+  const box = $('#imgActions'); box.innerHTML = '';
+  const defs = {
+    back: ['back', 'Back to the page picture', () => setActivePart(null)],
+    redraw: ['redraw', 'Redraw this picture', () => activePart ? drawPart(book.parts.find(x => x.id === activePart), true) : (() => { const a = artCache.get(P); if (a && a.url) URL.revokeObjectURL(a.url); artCache.delete(P); requestArt(P, true, true, true); })()],
+    save: ['save', 'Save this picture', savePicture],
+    delpart: ['trash', 'Remove this passage picture', () => removePart(activePart)],
+    prompt: ['prompt', 'Copy an image prompt for another image generator', promptDialog],
+    upload: ['upload', 'Upload your own picture', () => pickPicture()]
+  };
+  for (const k of list){
+    if (k === 'save' && !downloads) continue;
+    if (k === 'redraw' && !picReady()) continue;
+    const [ic, label, fn] = defs[k];
+    const b = document.createElement('button'); b.className = 'icon-btn'; b.dataset.k = k; b.setAttribute('aria-label', label); b.title = label; b.innerHTML = svgI(ic); b.onclick = fn; box.appendChild(b);
+  }
+}
+function renderScene(){
+  if (!book) return;
+  renderScene2();
+  const box = $('#imgActions'); const have = [...box.children].map(b => b.dataset.k);
+  setImgActions([...have, 'prompt', 'upload']);
+}
+/* ---------- partitions: a passage with its own picture ---------- */
+function setPartArt(id, svg, img){
+  const old = partArt.get(id); if (old && old.url) URL.revokeObjectURL(old.url);
+  if (img){ partArt.set(id, {status:'ready', img, url: img}); return; }
+  partArt.set(id, {status:'ready', svg, url: URL.createObjectURL(new Blob([svg], {type:'image/svg+xml'}))});
+}
+function setActivePart(id){
+  if (id === activePart) return;
+  activePart = id || null;
+  document.querySelectorAll('.part-mark').forEach(m => m.classList.toggle('on', m.dataset.mark === activePart));
+  renderScene();
+  const part = activePart && book.parts.find(x => x.id === activePart);
+  if (part && !partArt.has(part.id) && picReady()) drawPart(part);
+}
+async function createPart(ranges){
+  if (!picReady() && settings.picSource !== 'own') enableAi();
+  const first = ranges[0], last = ranges[ranges.length - 1];
+  const part = {id: 'pt' + Date.now().toString(36) + Math.random().toString(36).slice(2,5), page: P, ps: first.para, s: first.s, pe: last.para, e: last.e, text: ranges.map(r => r.text).join('\n\n').slice(0, 4000), at: Date.now()};
+  book.parts.push(part);
+  if (db) try { await bref().collection('parts').doc(part.id).set({...part}); } catch(e){ toast('Couldn’t save that passage'); }
+  activePart = null; renderText(); setActivePart(part.id);
+}
+async function drawPart(part, force){
+  if (!part || !picReady()) return;
+  const cur = partArt.get(part.id); if (cur && cur.status === 'loading') return;
+  if (force && cur && cur.url) URL.revokeObjectURL(cur.url);
+  partArt.set(part.id, {status:'loading'}); if (activePart === part.id) renderScene();
+  if (settings.picSource === 'openai'){
+    try {
+      const d = await openaiPicture({kind:'part', part, key: part.id, text: part.text, page: part.page, label:'this passage'}, false);
+      setPartArt(part.id, null, d); part.img = d; delete part.svg;
+      try { await bref().collection('parts').doc(part.id).set({...part}); } catch(e){}
+    } catch(e){ aiError(e); partArt.set(part.id, {status:'error'}); }
+    if (activePart === part.id) renderScene();
+    return;
+  }
+  const pageText = (book.pages[part.page - 1] || []).join('\n\n');
+  const known = knownFor(part.text, part.page);
+  const prompt = `You are the illustrator for an illustrated e-reader. The reader picked a passage from page ${part.page} of the book "${book.title}" and wants a picture of exactly that moment.
+${ART_RULES}
+- Focus tightly on the PASSAGE. Use the rest of the page only as background context.
+${known ? 'Characters and places involved, for a consistent look:\n' + known + '\n' : ''}
+PAGE CONTEXT:
+"""
+${pageText.slice(0, 4000)}
+"""
+PASSAGE:
+"""
+${part.text}
+"""`;
+  try {
+    const r = await callText(prompt, {modelTier: 'default', provider: 'anthropic', maxTokens: 12000});
+    const svg = cleanSvg(r && r.text);
+    if (!svg || svg === 'NONE'){ partArt.set(part.id, {status:'error'}); }
+    else {
+      setPartArt(part.id, svg); part.svg = svg; delete part.img;
+      if (db && svg.length < 200000) try { await bref().collection('parts').doc(part.id).set({...part}); } catch(e){}
+    }
+  } catch(e){ aiError(e); partArt.set(part.id, {status:'error'}); }
+  if (activePart === part.id) renderScene();
+}
+async function removePart(id){
+  const part = book.parts.find(x => x.id === id); if (!part) return;
+  book.parts = book.parts.filter(x => x.id !== id);
+  const a = partArt.get(id); if (a && a.url) URL.revokeObjectURL(a.url); partArt.delete(id);
+  if (activePart === id) activePart = null;
+  if (db) try { await bref().collection('parts').doc(id).delete(); } catch(e){}
+  renderText(); renderScene();
+}
+
+
+/* ---------- your own pictures: copy a prompt, upload or paste the result ---------- */
+const promptCache = new Map();
+function currentTarget(){
+  const part = activePart && book.parts.find(x => x.id === activePart);
+  return part ? {kind:'part', part, key: part.id, text: part.text, page: part.page, label: 'this passage'} : {kind:'page', page: P, key: 'p' + P, text: (book.pages[P-1] || []).join('\n\n'), label: 'page ' + P};
+}
+function templatePrompt(t){
+  const scene = t.text.replace(/\s+/g, ' ').trim();
+  const cut = scene.length > 700 ? scene.slice(0, 700) + '…' : scene;
+  const known = knownFor(t.text, t.page).split('\n').filter(Boolean).map(l => l.replace(/^- /, '')).join('; ');
+  return `Illustration of a scene from the novel "${book.title}": ${cut}${known ? '\n\nCharacters and places: ' + known : ''}\n\nStyle: ${settings.style || DEFAULT_STYLE}. No text or lettering in the image.`;
+}
+function promptDialog(){
+  const t = currentTarget();
+  const ov = $('#overlay'); hideSel();
+  ov.innerHTML = `<div class="scrim" data-close></div><div class="modal" role="dialog" aria-modal="true" aria-labelledby="pmT">
+    <b id="pmT">Image prompt for ${esc(t.label)}</b>
+    <div class="muted" style="font-size:14px">Paste this into any image generator. Then upload the picture here, or copy it and paste it onto the page.</div>
+    <label for="pmX" class="muted" style="font-size:13px">Prompt (you can edit it)</label>
+    <textarea id="pmX" style="min-height:180px"></textarea>
+    <div id="pmS" class="muted" style="font-size:13px" role="status" aria-live="polite"></div>
+    <div class="row"><button class="btn" data-close>Close</button><button class="btn" id="pmU">${svgI('upload').replace('<svg', '<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"')}Upload picture</button><button class="btn primary" id="pmC">Copy prompt</button></div></div>`;
+  ov.querySelectorAll('[data-close]').forEach(x => x.onclick = closeOverlay);
+  const box = $('#pmX'), st = $('#pmS');
+  box.value = promptCache.get(t.key) || templatePrompt(t);
+  let edited = false; box.oninput = () => { edited = true; };
+  $('#pmC').onclick = async () => { try { await navigator.clipboard.writeText(box.value); st.textContent = 'Copied. Paste it into your image generator.'; } catch(e){ box.select(); st.textContent = 'Couldn’t copy automatically. The text is selected, so copy it yourself.'; } };
+  $('#pmU').onclick = () => { closeOverlay(); pickPicture(t); };
+  if (!promptCache.has(t.key) && aiReady() && t.text.trim().length > 80){
+    st.textContent = 'Writing a sharper prompt…';
+    writeImagePrompt(t, false).then(txt => {
+      promptCache.set(t.key, txt);
+      if (box.isConnected && !edited){ box.value = txt; st.textContent = 'Prompt ready.'; }
+      else if (box.isConnected) st.textContent = '';
+    }).catch(e => { aiError(e); if (st.isConnected) st.textContent = ''; });
+  }
+}
+let picTarget = null;
+function pickPicture(t){ picTarget = t || currentTarget(); const inp = $('#picIn'); inp.value = ''; inp.click(); }
+$('#picIn').addEventListener('change', async e => { const f = e.target.files[0]; if (f && picTarget) await usePicture(f, picTarget); picTarget = null; });
+document.addEventListener('paste', async e => {
+  if ($('#reader').hidden || !book) return;
+  const tg = e.target; if (tg && (tg.tagName === 'TEXTAREA' || tg.tagName === 'INPUT')) return;
+  const item = [...(e.clipboardData ? e.clipboardData.items : [])].find(i => i.type && i.type.startsWith('image/'));
+  if (!item) return;
+  e.preventDefault();
+  const f = item.getAsFile(); if (f) await usePicture(f, currentTarget());
+});
+function dataUrlToBlob(d){
+  const [head, b64] = d.split(','); const mime = (head.match(/data:([^;]+)/) || [])[1] || 'image/jpeg';
+  const bin = atob(b64); const u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return new Blob([u8], {type: mime});
+}
+async function shrinkImage(file){
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const w = img.naturalWidth, h = img.naturalHeight; let sc = Math.min(1, 1100 / Math.max(w, h));
+    for (let k = 0; k < 7; k++){
+      const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * sc)); c.height = Math.max(1, Math.round(h * sc));
+      const ctx = c.getContext('2d'); ctx.fillStyle = '#1B2440'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0, c.width, c.height);
+      const d = c.toDataURL('image/jpeg', Math.max(0.5, 0.86 - k * 0.06));
+      if (d.length < 230000) return d;
+      sc *= 0.85;
+    }
+    throw new Error('too big');
+  } finally { URL.revokeObjectURL(url); }
+}
+async function usePicture(file, t){
+  if (!file.type.startsWith('image/')){ toast('That isn’t an image file'); return; }
+  let d; try { d = await shrinkImage(file); } catch(e){ toast('Couldn’t read that picture'); return; }
+  if (t.kind === 'part'){
+    const part = book.parts.find(x => x.id === t.part.id); if (!part) return;
+    part.img = d; delete part.svg; setPartArt(part.id, null, d);
+    if (db) try { await bref().collection('parts').doc(part.id).set({...part}); } catch(e){ toast('Couldn’t save the picture'); }
+    toast('Picture added to this passage');
+  } else {
+    setArt(t.page, null, d);
+    if (db) try { await bref().collection('art').doc(String(t.page)).set({page: t.page, img: d}); } catch(e){ toast('Couldn’t save the picture'); }
+    toast('Picture added to page ' + t.page);
+  }
+  renderScene();
+}
+
+/* ---------- saving pictures ---------- */
+const fileTitle = () => (book.title || 'book').replace(/[\\/:*?"<>|]+/g, '').slice(0, 60).trim() || 'book';
+function svgToPng(svg){
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(new Blob([svg], {type:'image/svg+xml'}));
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas'); c.width = 1200; c.height = 1400;
+        c.getContext('2d').drawImage(img, 0, 0, 1200, 1400);
+        c.toBlob(b => { URL.revokeObjectURL(url); b ? res(b) : rej(new Error('png')); }, 'image/png');
+      } catch(e){ URL.revokeObjectURL(url); rej(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('load')); };
+    img.src = url;
+  });
+}
+async function offerFile(filename, data){
+  try { await downloads.save({filename, data}); }
+  catch(e){ if (e && e.code !== 'declined') toast('Couldn’t save the file here'); }
+}
+async function savePicture(){
+  if (!downloads || !shown || !(shown.svg || shown.img)) return;
+  let data, name = `${fileTitle()} - ${shown.name}`;
+  if (shown.img){ await offerFile(name + '.jpg', dataUrlToBlob(shown.img)); return; }
+  try { data = await svgToPng(shown.svg); name += '.png'; } catch(e){ data = shown.svg; name += '.svg'; }
+  await offerFile(name, data);
+}
+async function saveAllPictures(btn){
+  if (!downloads || !window.JSZip) return;
+  btn.disabled = true; const label = btn.textContent;
+  try {
+    const items = [];
+    if (db){
+      btn.textContent = 'Gathering pictures…';
+      const s = await withTimeout(bref().collection('art').get(), 20000);
+      s.docs.forEach(d => { const x = d.data(); const nm = `page-${String(x.page).padStart(4,'0')}`; if (x.img) items.push({name: nm + '.jpg', img: x.img}); else if (x.svg && x.svg !== 'NONE') items.push({name: nm + '.png', svg: x.svg}); });
+    } else {
+      artCache.forEach((a, pg) => { const nm = `page-${String(pg).padStart(4,'0')}`; if (a.img) items.push({name: nm + '.jpg', img: a.img}); else if (a.svg) items.push({name: nm + '.png', svg: a.svg}); });
+    }
+    book.parts.forEach(p => { const nm = `passage-page-${String(p.page).padStart(4,'0')}-${p.id}`; if (p.img) items.push({name: nm + '.jpg', img: p.img}); else if (p.svg) items.push({name: nm + '.png', svg: p.svg}); });
+    if (!items.length){ toast('No pictures yet for this book'); return; }
+    const zip = new JSZip(); let n = 0;
+    for (const it of items){
+      btn.textContent = `Preparing ${++n} of ${items.length}…`;
+      if (it.img){ zip.file(it.name, dataUrlToBlob(it.img)); continue; }
+      try { zip.file(it.name, await svgToPng(it.svg)); } catch(e){ zip.file(it.name.replace(/\.png$/, '.svg'), it.svg); }
+    }
+    btn.textContent = 'Zipping…';
+    await offerFile(`${fileTitle()} - pictures.zip`, await zip.generateAsync({type:'blob'}));
+  } catch(e){ toast('Couldn’t gather the pictures. Try again.'); }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+function requestArt(page, front, now, force){
+  if (!book || page < 1 || page > book.numPages) return;
+  if (artCache.has(page) && !force) { if (front) renderScene(); return; }
+  if (artQueue.some(q => q.page === page)) return;
+  const job = {page, force, bid: book.id};
+  front ? artQueue.unshift(job) : artQueue.push(job);
+  runArt();
+}
+async function runArt(){
+  if (artBusy) return; artBusy = true;
+  try {
+    while (artQueue.length){
+      const job = artQueue.shift();
+      if (!book || job.bid !== book.id) continue;
+      if (artCache.has(job.page) && !job.force) continue;
+      if (Math.abs(job.page - P) > 2) continue;
+      await loadArt(job);
+      if (book && job.bid === book.id){
+        if (job.page === P) renderScene();
+        if (job.page === P && picReady()) requestArt(P + 1, false);
+      }
+    }
+  } finally { artBusy = false; }
+}
+async function loadArt(job){
+  const page = job.page;
+  if (db && !job.force){
+    try { const s = await withTimeout(bref().collection('art').doc(String(page)).get()); if (s.exists){ const d = s.data(); setArt(page, d.svg, d.img); return; } } catch(e){}
+  }
+  if (!picReady() || Date.now() < backoffUntil) return;
+  const text = (book.pages[page-1] || []).join('\n\n');
+  if (text.length < 150){ artCache.set(page, {status:'none'}); return; }
+  if (settings.picSource === 'openai'){
+    try {
+      const d = await openaiPicture({kind:'page', page, key:'p' + page, text, label:'page ' + page}, true);
+      if (d === 'NONE'){ artCache.set(page, {status:'none'}); try { await bref().collection('art').doc(String(page)).set({page, svg:'NONE'}); } catch(e){} return; }
+      setArt(page, null, d);
+      try { await bref().collection('art').doc(String(page)).set({page, img: d}); } catch(e){}
+    } catch(e){ aiError(e); if (!aiBlocked && !budgetHit()) artCache.set(page, {status:'error', msg: e && e.message}); }
+    return;
+  }
+  const known = knownFor(text, page);
+  const prompt = `You are the illustrator for an illustrated e-reader. Draw ONE illustration for this page of the book "${book.title}", showing the most important moment or setting on the page.
+${ART_RULES}
+- If the page has no scene (title page, copyright, contents, acknowledgments, index), reply with exactly NONE.
+${known ? 'Characters and places on this page, for a consistent look:\n' + known + '\n' : ''}
+PAGE ${page}:
+"""
+${text.slice(0, 6000)}
+"""`;
+  try {
+    const r = await callText(prompt, {modelTier: 'default', provider: 'anthropic', maxTokens: 12000});
+    const svg = cleanSvg(r && r.text);
+    if (svg === 'NONE'){ artCache.set(page, {status:'none'}); if (db) try { await bref().collection('art').doc(String(page)).set({page, svg:'NONE'}); } catch(e){} return; }
+    if (!svg){ artCache.set(page, {status:'error'}); return; }
+    setArt(page, svg);
+    if (db && svg.length < 200000) try { await bref().collection('art').doc(String(page)).set({page, svg}); } catch(e){}
+  } catch(e){ aiError(e); if (!aiBlocked) artCache.set(page, {status:'error'}); }
+}
+function setArt(page, svg, img){
+  const old = artCache.get(page); if (old && old.url) URL.revokeObjectURL(old.url);
+  if (img){ artCache.set(page, {status:'ready', url: img, img}); return; }
+  if (!svg || svg === 'NONE'){ artCache.set(page, {status:'none'}); return; }
+  const url = URL.createObjectURL(new Blob([svg], {type:'image/svg+xml'}));
+  artCache.set(page, {status:'ready', url, svg});
+}
+function cleanSvg(raw){
+  let t = String(raw || '').trim();
+  if (/^NONE\b/i.test(t)) return 'NONE';
+  const a = t.indexOf('<svg'), b = t.lastIndexOf('</svg>');
+  if (a < 0 || b < 0) return null;
+  t = t.slice(a, b + 6);
+  const doc = new DOMParser().parseFromString(t, 'image/svg+xml');
+  if (doc.querySelector('parsererror')) return null;
+  const svg = doc.documentElement;
+  svg.querySelectorAll('script,foreignObject,image,iframe').forEach(n => n.remove());
+  svg.querySelectorAll('*').forEach(n => { for (const at of [...n.attributes]){ if (/^on/i.test(at.name)) n.removeAttribute(at.name); else if (/href$/i.test(at.name) && !at.value.trim().startsWith('#')) n.removeAttribute(at.name); } });
+  if (!svg.getAttribute('viewBox')) svg.setAttribute('viewBox', '0 0 600 700');
+  svg.removeAttribute('width'); svg.removeAttribute('height');
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+  let out = new XMLSerializer().serializeToString(svg);
+  if (!/xmlns="http:\/\/www\.w3\.org\/2000\/svg"/.test(out)) out = out.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+  return out;
+}
+
+/* ---------- memory (codex) ---------- */
+let codexBusy = false;
+function slug(s){ return 'e_' + String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,40); }
+function rebuildEntities(){
+  const list = [], byKey = new Map();
+  const chunks = [...book.codex.values()].sort((a,b) => a.idx - b.idx);
+  for (const c of chunks){
+    const from = c.idx * CHUNK + 1, to = Math.min(book.numPages, from + CHUNK - 1);
+    for (const x of (c.entities || [])){
+      if (!x || !x.name) continue;
+      const keys = [x.name, ...(x.aliases || [])].filter(Boolean).map(k => String(k).toLowerCase());
+      let en = keys.map(k => byKey.get(k)).find(Boolean);
+      if (!en){ en = {id: slug(x.name), name: String(x.name), type: x.type || 'thing', aliases: new Set(), description: '', descPage: Infinity, facts: [], firstPage: Infinity}; list.push(en); }
+      (x.aliases || []).forEach(a => { if (a && a !== en.name) en.aliases.add(String(a)); });
+      keys.forEach(k => { if (!byKey.has(k)) byKey.set(k, en); });
+      for (const f of (x.facts || [])){
+        let pg = Math.round(Number(f.page)); if (!f.text) continue;
+        if (!(pg >= from && pg <= to)) pg = to;
+        en.facts.push({page: pg, text: String(f.text)}); en.firstPage = Math.min(en.firstPage, pg);
+      }
+      if (x.description && !en.description){
+        let dp = Math.round(Number(x.firstPage)); if (!(dp >= from && dp <= to)) dp = en.firstPage !== Infinity ? Math.max(en.firstPage, from) : to;
+        en.description = String(x.description); en.descPage = dp;
+        if (en.firstPage === Infinity) en.firstPage = dp;
+      }
+    }
+  }
+  list.forEach(en => en.facts.sort((a,b) => a.page - b.page));
+  book.entities = list.filter(en => en.firstPage !== Infinity);
+}
+function setMemLbl(t){ $('#memLbl').textContent = t || ''; }
+async function ensureCodex(){
+  if (!book || !aiReady() || codexBusy || Date.now() < backoffUntil) return;
+  const last = Math.floor((book.numPages - 1) / CHUNK);
+  const target = Math.min(last, Math.floor((P - 1) / CHUNK) + 1);
+  const bid = book.id;
+  codexBusy = true;
+  try {
+    for (let idx = 0; idx <= target; idx++){
+      if (!book || book.id !== bid || !aiReady()) break;
+      if (book.codex.has(idx)) continue;
+      const from = idx * CHUNK + 1, to = Math.min(book.numPages, from + CHUNK - 1);
+      if (from <= P) setMemLbl(`Memory catching up · p. ${from}–${to}`);
+      const ok = await buildChunk(idx, from, to);
+      if (!ok) break;
+      rebuildEntities();
+      if (from <= P) renderText();
+    }
+  } finally { codexBusy = false; setMemLbl(''); }
+}
+async function buildChunk(idx, from, to){
+  let pagesTxt = '';
+  for (let p = from; p <= to; p++){ const t = (book.pages[p-1] || []).join('\n'); if (t.trim()) pagesTxt += `\n[Page ${p}]\n${t}\n`; }
+  let entities = [];
+  if (pagesTxt.trim().length > 80){
+    const known = book.entities.slice(0, 200).map(en => `${en.name} (${en.type})${en.aliases.size ? ' — also: ' + [...en.aliases].join(', ') : ''}`).join('\n') || '(none yet)';
+    const prompt = `You are building a spoiler-free reader's companion for the book "${book.title}". Read ONLY the pages below and record the named characters, places, events, groups and important named things that appear in them.
+Rules:
+- Use only what these pages say. Never use outside knowledge of this book, even if you recognize it: the reader has not read further.
+- facts: short sentences about what happens to, or is revealed about, the entity on that page. Give the page number each fact comes from.
+- If an entity in KNOWN ENTITIES appears again, use its exact known name (match nicknames, surnames and titles to it).
+- aliases: other proper names the text uses for it on these pages, exactly as written (for example a first name alone).
+- For an entity NOT in KNOWN ENTITIES: "firstPage" = the page where it first appears, and "description" = one sentence on who or what it is, using ONLY what that first page says.
+- type is one of: character, place, event, group, thing.
+- Skip the author, publisher and front matter. Skip entities with nothing meaningful here.
+Reply with JSON only, no fences:
+{"entities":[{"name":"","type":"","aliases":[],"firstPage":0,"description":"","facts":[{"page":0,"text":""}]}]}
+
+KNOWN ENTITIES:
+${known}
+
+PAGES:
+${pagesTxt.slice(0, 24000)}`;
+    try {
+      const r = await sample(prompt, {modelTier: 'default'});
+      const t = (r && r.text) || '';
+      const a = t.indexOf('{'), b = t.lastIndexOf('}');
+      const parsed = JSON.parse(t.slice(a, b + 1));
+      entities = Array.isArray(parsed.entities) ? parsed.entities.slice(0, 80).map(x => ({
+        name: String(x.name || '').slice(0, 80), type: ['character','place','event','group','thing'].includes(x.type) ? x.type : 'thing',
+        aliases: Array.isArray(x.aliases) ? x.aliases.slice(0, 6).map(s => String(s).slice(0, 60)) : [],
+        firstPage: Number(x.firstPage) || 0, description: String(x.description || '').slice(0, 400),
+        facts: Array.isArray(x.facts) ? x.facts.slice(0, 12).map(f => ({page: Number(f.page) || 0, text: String(f.text || '').slice(0, 300)})) : []
+      })).filter(x => x.name) : [];
+    } catch(e){
+      if (e && e.code){ aiError(e); return false; }
+      return false; // unreadable answer: try again on the next page turn
+    }
+  }
+  const doc = {idx, from, to, entities};
+  book.codex.set(idx, doc);
+  if (db) try { await bref().collection('codex').doc('c' + idx).set(doc); } catch(e){}
+  return true;
+}
+
+/* Memory index */
+const TYPES = {character:'People', place:'Places', event:'Events', group:'Groups', thing:'Things'};
+$('#memBtn').onclick = () => {
+  const ents = visibleEntities();
+  const intro = `<div class="shield">${svgI('lock')}<span><strong>Spoiler shield on.</strong> Only what you’ve read, through page ${P}.</span></div>`;
+  let extra = '';
+  if (!aiReady()) extra = `<p class="muted">Turn on pictures and memory and add an API key in settings (Aa) to start building memory.</p>`;
+  else if (!ents.length) extra = '<p class="muted">Nothing yet. Memory fills in as you read.</p>';
+  const body = panel('Memory', intro + extra + (ents.length ? '<input class="search" id="entQ" placeholder="Search names, places, events" aria-label="Search memory"><div id="entL"></div>' : ''), '#memBtn');
+  if (!ents.length) return;
+  const draw = q => {
+    const L = $('#entL'); L.innerHTML = '';
+    for (const [t, label] of Object.entries(TYPES)){
+      const xs = ents.filter(en => en.type === t && (!q || en.name.toLowerCase().includes(q) || [...en.aliases].some(a => a.toLowerCase().includes(q)))).sort((a,b) => a.name.localeCompare(b.name));
+      if (!xs.length) continue;
+      const sec = document.createElement('div'); sec.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-bottom:14px';
+      sec.innerHTML = `<h3 class="h3">${label}</h3><div class="ent-list"></div>`;
+      xs.forEach(en => { const b = document.createElement('button'); b.className = 'ent-item'; const n = en.facts.filter(f => f.page <= P).length; b.innerHTML = `<span>${esc(en.name)}</span><small>${n} note${n===1?'':'s'}</small>`; b.onclick = () => openCard(en.id); sec.lastChild.appendChild(b); });
+      L.appendChild(sec);
+    }
+  };
+  draw('');
+  $('#entQ').oninput = e => draw(e.target.value.trim().toLowerCase());
+};
+
+/* Memory card */
+const recapCache = new Map();
+function openCard(id){
+  const en = book.entities.find(x => x.id === id);
+  if (!en || en.firstPage > P) return;
+  const facts = en.facts.filter(f => f.page <= P);
+  const aliases = [...en.aliases].filter(a => a.toLowerCase() !== en.name.toLowerCase());
+  const label = {character:'Character', place:'Place', event:'Event', group:'Group', thing:'Thing'}[en.type] || 'Thing';
+  const body = panel(en.name, `
+    <div class="muted" style="margin-top:-8px;font-size:14px">${label} · first appears on page ${en.firstPage}${aliases.length ? ' · also called ' + esc(aliases.join(', ')) : ''}</div>
+    <div class="shield">${svgI('lock')}<span><strong>Spoiler shield on.</strong> Only what you’ve read, through page ${P}.</span></div>
+    ${en.description && en.descPage <= P ? `<div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">Who or what</h3><p class="desc">${esc(en.description)}</p></div>` : ''}
+    <div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">So far</h3><div class="facts">${facts.map(f => `<div class="fact"><button data-pg="${f.page}" aria-label="Go to page ${f.page}">p. ${f.page}</button><span>${esc(f.text)}</span></div>`).join('') || '<span class="muted">No notes yet.</span>'}</div></div>
+    ${facts.length >= 3 && aiReady() ? `<div style="display:flex;flex-direction:column;gap:8px"><button class="btn" id="recapBtn" style="align-self:flex-start">Catch me up</button><p class="desc" id="recapT" hidden></p></div>` : ''}
+    <p class="muted" style="font-size:13px;margin:0">More unlocks as you keep reading.</p>`);
+  body.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { closeOverlay(); goPage(+b.dataset.pg); });
+  const rb = $('#recapBtn');
+  if (rb) rb.onclick = async () => {
+    const key = en.id + ':' + facts.length, out = $('#recapT');
+    if (recapCache.has(key)){ out.hidden = false; out.textContent = recapCache.get(key); return; }
+    rb.disabled = true; rb.textContent = 'Thinking…';
+    try {
+      const r = await sample(`Write a 2–3 sentence recap of "${en.name}" for someone reading "${book.title}". Use ONLY these notes from what they have read so far. Add nothing else, even if you know the book.\n\n${en.description ? 'Intro: ' + en.description + '\n' : ''}${facts.map(f => `p.${f.page}: ${f.text}`).join('\n')}\n\nReply with just the recap.`, {modelTier: 'quick'});
+      const t = String((r && r.text) || '').trim(); recapCache.set(key, t);
+      if (out.isConnected){ out.hidden = false; out.textContent = t; rb.remove(); }
+    } catch(e){ aiError(e); if (rb.isConnected){ rb.disabled = false; rb.textContent = 'Catch me up'; } toast('Couldn’t write a recap right now'); }
+  };
+}
+
+boot();
+})();
+</script>
+</body>
+</html>
