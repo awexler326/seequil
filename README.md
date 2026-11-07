@@ -29,11 +29,11 @@ Everything you add (books, pictures, notes, API keys) is stored **only in your b
 5. In Seequil, open **Settings (gear button)**, paste the key into **OpenAI API key**, and switch on **Pictures and memory**.
 
 Rough costs at the default settings:
-- Low-quality picture: about $0.016
-- Medium-quality picture: about $0.063
+- Low-quality picture: about $0.007
+- Medium-quality picture: about $0.014
 - Memory: a fraction of a cent for every 6 pages
 
-So $5 covers roughly 300 low-quality pictures.
+So $5 covers roughly 600 low-quality pictures.
 
 ## 4. Seequil's own budget
 
@@ -69,5 +69,5 @@ Books live in **this browser on this device**. Your phone and your computer each
 
 - **"didn't accept your API key":** re-copy the key into Settings.
 - **"out of credit or hit its spending limit":** add credits on the provider's billing page.
-- **AI model names change over time.** If OpenAI or Anthropic retires a model, update the names under **Settings → Advanced: models and prices**. The defaults are `gpt-6-luna` (text), `gpt-image-1` (pictures), `claude-sonnet-5-5` and `claude-haiku-5-5`.
+- **AI model names change over time.** If OpenAI or Anthropic retires a model, update the names under **Settings → Advanced: models and prices**. The defaults are `gpt-6-luna` (text), `gpt-image-2.5-flare` (pictures), `claude-sonnet-5-5` and `claude-haiku-5-5`.
 - **Copy-protected (DRM) EPUBs** from Kindle, Apple Books and similar stores can't be opened. DRM-free EPUBs and PDFs with real text work.
