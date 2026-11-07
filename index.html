@@ -201,7 +201,7 @@ input[type=range]{width:100%;accent-color:var(--gold);margin:0}
       <div class="lbl"><span id="ttsLbl">Tap play to read aloud</span><span id="memLbl"></span></div>
       <input type="range" id="pgSlider" min="1" max="1" value="1" aria-label="Page">
     </div>
-    <select id="rateSel" aria-label="Reading speed"><option value="0.8">0.8×</option><option value="1" selected>1.0×</option><option value="1.2">1.2×</option><option value="1.5">1.5×</option><option value="2">2.0×</option></select>
+    <select id="rateSel" aria-label="Reading speed"><option value="0.8">0.8×</option><option value="1" selected>1.0×</option><option value="1.2">1.2×</option><option value="1.5">1.5×</option><option value="1.75">1.75×</option><option value="2">2.0×</option><option value="2.5">2.5×</option><option value="3">3.0×</option></select>
   </div>
 </section>
 
@@ -1487,24 +1487,32 @@ function rebuildEntities(){
   book.entities = list.filter(en => en.firstPage !== Infinity);
 }
 function setMemLbl(t){ $('#memLbl').textContent = t || ''; }
+const MEM_PAR = 4; // batches worked on at the same time when catching up
 async function ensureCodex(){
   if (!book || !aiReady() || codexBusy || Date.now() < backoffUntil) return;
   const last = Math.floor((book.numPages - 1) / CHUNK);
   const target = Math.min(last, Math.floor((P - 1) / CHUNK) + 1);
   const bid = book.id;
+  const todo = []; for (let idx = 0; idx <= target; idx++) if (!book.codex.has(idx)) todo.push(idx);
+  if (!todo.length) return;
   codexBusy = true;
-  try {
-    for (let idx = 0; idx <= target; idx++){
-      if (!book || book.id !== bid || !aiReady()) break;
-      if (book.codex.has(idx)) continue;
+  const total = todo.length; let done = 0, failed = false;
+  const show = () => { if (total > 1) setMemLbl(`Memory catching up · ${Math.round(done / total * 100)}%`); else setMemLbl('Memory updating…'); };
+  show();
+  const worker = async () => {
+    while (todo.length && !failed){
+      if (!book || book.id !== bid || !aiReady()) return;
+      const idx = todo.shift();
       const from = idx * CHUNK + 1, to = Math.min(book.numPages, from + CHUNK - 1);
-      if (from <= P) setMemLbl(`Memory catching up · p. ${from}–${to}`);
       const ok = await buildChunk(idx, from, to);
-      if (!ok) break;
-      rebuildEntities();
-      if (from <= P) renderText();
+      if (!ok){ failed = true; return; }
+      done++; show();
+      if (book && book.id === bid){ rebuildEntities(); if (from <= P && !tts.on) renderText(); }
     }
-  } finally { codexBusy = false; setMemLbl(''); }
+  };
+  try { await Promise.all(Array.from({length: Math.min(MEM_PAR, total)}, worker)); }
+  finally { codexBusy = false; setMemLbl(''); }
+  if (!failed && book && book.id === bid && Math.min(last, Math.floor((P - 1) / CHUNK) + 1) > target) ensureCodex();
 }
 async function buildChunk(idx, from, to){
   let pagesTxt = '';
