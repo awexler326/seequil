@@ -26,7 +26,7 @@ Everything you add (books, pictures, notes, API keys) is stored **only in your b
 2. Open **Billing**, add a payment method, and buy credits. **$5 is the minimum.**
 3. When buying, **turn off auto-recharge.** With it off, you can never spend more than the credits you loaded.
 4. Open **API keys → Create new secret key**, and copy the key. It starts with `sk-`.
-5. In Seequil, open **Settings (Aa)**, paste the key into **OpenAI API key**, and switch on **Pictures and memory**.
+5. In Seequil, open **Settings (gear button)**, paste the key into **OpenAI API key**, and switch on **Pictures and memory**.
 
 Rough costs at the default settings:
 - Low-quality picture: about $0.016

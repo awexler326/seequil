@@ -142,7 +142,8 @@ input[type=range]{width:100%;accent-color:var(--gold);margin:0}
 <section id="library">
   <div class="brand">
     <svg width="56" height="56" viewBox="0 0 240 240" aria-hidden="true"><defs><clipPath id="rp"><path d="M124 78 Q162 64 204 74 L204 174 Q162 164 124 178 Z"/></clipPath></defs><rect width="240" height="240" rx="54" fill="#1B2440"/><path d="M36 74 Q78 64 116 78 L116 178 Q78 164 36 174 Z" fill="#F6F3EC"/><g stroke="#1B2440" stroke-width="5" stroke-linecap="round" opacity="0.45"><path d="M52 98 L100 104"/><path d="M52 116 L100 121"/><path d="M52 134 L100 138"/><path d="M52 152 L86 155"/></g><g clip-path="url(#rp)"><rect x="120" y="60" width="90" height="125" fill="#E8A33D"/><circle cx="172" cy="112" r="13" fill="#F6F3EC"/><path d="M120 168 L146 138 L164 156 L180 142 L210 172 L210 190 L120 190 Z" fill="#1B2440"/></g></svg>
-    <div><h1>Seequil</h1><p>Read it. See it. Remember it.</p></div>
+    <div style="flex:1"><h1>Seequil</h1><p>Read it. See it. Remember it.</p></div>
+    <button class="btn" id="libSet"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings</button>
   </div>
   <div class="drop" id="drop">
     <h2>Add a book</h2>
@@ -161,7 +162,7 @@ input[type=range]{width:100%;accent-color:var(--gold);margin:0}
     <div class="t"><b id="bTitle"></b><span id="bPage"></span></div>
     <button class="icon-btn" id="memBtn" aria-label="Memory: people, places and events"><svg viewBox="0 0 24 24"><circle cx="6" cy="7" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7.2 9.4 L10.8 15.8 M16.9 8.3 L13.2 15.8 M8.5 6.8 L15.5 6.2"/></svg></button>
     <button class="icon-btn" id="hlBtn" aria-label="Highlights and notes"><svg viewBox="0 0 24 24"><path d="M9 15 L4 20 H9 L11 18"/><path d="M14 4 L20 10 L11 19 L5 13 Z"/></svg></button>
-    <button class="icon-btn" id="setBtn" aria-label="Settings" style="font-family:Literata,Georgia,serif;font-size:18px;font-weight:600">Aa</button>
+    <button class="icon-btn" id="setBtn" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
   </div>
   <div class="spread">
     <div class="textpane" id="textpane">
@@ -307,14 +308,14 @@ function picReady(){
 function apiErr(provider, status, j){
   const m = (j && j.error && (j.error.message || j.error.type)) || '';
   const name = provider === 'openai' ? 'OpenAI' : 'Anthropic';
-  if (status === 401 || status === 403) return {code: 'bad_key', message: `${name} didn’t accept your API key. Check it in settings (Aa).`};
+  if (status === 401 || status === 403) return {code: 'bad_key', message: `${name} didn’t accept your API key. Check it in Settings.`};
   if ((j && j.error && j.error.code === 'insufficient_quota') || /credit balance|insufficient_quota|billing|spend limit/i.test(m)) return {code: 'no_credit', message: `Your ${name} account is out of credit or hit its spending limit.`};
   if (status === 429) return {code: 'rate_limited', message: m};
   return {code: 'api', message: `${name}: ${m || 'request failed (' + status + ')'}`};
 }
 async function callText(prompt, opts = {}){
   const prov = textProvider(opts.provider);
-  if (!prov) throw {code: 'bad_key', message: 'Add an API key in settings (Aa).'};
+  if (!prov) throw {code: 'bad_key', message: 'Add an API key in Settings.'};
   checkBudget(0.003);
   let r, j;
   try {
@@ -337,7 +338,7 @@ async function callText(prompt, opts = {}){
   return {text: (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('')};
 }
 async function openaiImage(prompt){
-  if (!settings.oaKey) throw {code: 'bad_key', message: 'Add an OpenAI API key in settings (Aa).'};
+  if (!settings.oaKey) throw {code: 'bad_key', message: 'Add an OpenAI API key in Settings.'};
   checkBudget(picCost());
   const body = {model: settings.oaImage, prompt: prompt.slice(0, 3800), size: '1024x1536', quality: settings.picQuality, n: 1};
   if (/^dall-e/i.test(settings.oaImage)){ body.response_format = 'b64_json'; body.size = '1024x1792'; body.quality = settings.picQuality === 'medium' ? 'hd' : 'standard'; }
@@ -870,6 +871,7 @@ $('#hlBtn').onclick = () => {
 
 /* Settings */
 const openSettings = () => $('#setBtn').click();
+$('#libSet').onclick = openSettings;
 $('#setBtn').onclick = () => {
   const voices = ('speechSynthesis' in window) ? speechSynthesis.getVoices() : [];
   const vOpts = '<option value="">Default voice</option>' + voices.filter(v => /^en/i.test(v.lang) || voices.length < 25).map(v => `<option value="${esc(v.voiceURI)}"${v.voiceURI===settings.voice?' selected':''}>${esc(v.name)} (${esc(v.lang)})</option>`).join('');
@@ -1023,7 +1025,7 @@ function renderScene2(){
   pill.hidden = false; pill.innerHTML = '<span class="spin" aria-hidden="true"></span>Drawing this page…';
 }
 function enableAi(){
-  if (!settings.oaKey && !settings.anKey){ openSettings(); toast('Add an API key first'); return; }
+  if (!settings.oaKey && !settings.anKey){ openSettings(); toast('Add an API key in Settings first'); return; }
   settings.ai = true; aiBlocked = false; saveSettings();
   renderScene(); requestArt(P, true, true); ensureCodex();
 }
@@ -1489,7 +1491,7 @@ $('#memBtn').onclick = () => {
   const ents = visibleEntities();
   const intro = `<div class="shield">${svgI('lock')}<span><strong>Spoiler shield on.</strong> Only what you’ve read, through page ${P}.</span></div>`;
   let extra = '';
-  if (!aiReady()) extra = `<p class="muted">Turn on pictures and memory and add an API key in settings (Aa) to start building memory.</p>`;
+  if (!aiReady()) extra = `<p class="muted">Turn on pictures and memory and add an API key in Settings to start building memory.</p>`;
   else if (!ents.length) extra = '<p class="muted">Nothing yet. Memory fills in as you read.</p>';
   const body = panel('Memory', intro + extra + (ents.length ? '<input class="search" id="entQ" placeholder="Search names, places, events" aria-label="Search memory"><div id="entL"></div>' : ''), '#memBtn');
   if (!ents.length) return;
