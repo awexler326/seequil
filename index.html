@@ -386,7 +386,14 @@ async function openaiImage(prompt, sizeOverride, refs){
       if (/^dall-e/i.test(settings.oaImage)){ body.response_format = 'b64_json'; body.size = '1024x1792'; body.quality = settings.picQuality === 'medium' ? 'hd' : 'standard'; }
       r = await fetch('https://api.openai.com/v1/images/generations', {method: 'POST', headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + settings.oaKey}, body: JSON.stringify(body)});
     }
-  } catch(e){ throw {code: 'api', message: navigator.onLine === false ? 'You seem to be offline.' : 'This browser couldn’t reach OpenAI. Usually an ad or privacy blocker, or a work or school network blocking AI sites. Settings has a Test connection button.'}; }
+  } catch(e){
+    if (refs.length){
+      if (!refWarned){ refWarned = true; toast('Couldn’t send portraits to OpenAI from this browser, so this picture used the written looks instead.'); }
+      settings.refBlocked = true; saveSettings();
+      return openaiImage(prompt, sizeOverride, []);
+    }
+    throw {code: 'api', message: navigator.onLine === false ? 'You seem to be offline.' : 'This browser couldn’t reach OpenAI. Usually an ad or privacy blocker, or a work or school network blocking AI sites. Settings has a Test connection button.'};
+  }
   const j = await r.json().catch(() => ({}));
   if (!r.ok){
     const msg = (j && j.error && j.error.message) || '';
@@ -430,6 +437,16 @@ async function testConnection(out){
   };
   if (!settings.oaKey && !settings.anKey){ out.textContent = 'Add an API key first.'; return; }
   if (settings.oaKey) await check('OpenAI', 'https://api.openai.com/v1/models', {'Authorization': 'Bearer ' + settings.oaKey});
+  if (settings.oaKey){
+    lines.push('OpenAI pictures with portraits: checking…'); show(); const i = lines.length - 1;
+    try {
+      const fd = new FormData(); fd.append('model', settings.oaImage); fd.append('prompt', 'connection test');
+      const r = await fetch('https://api.openai.com/v1/images/edits', {method: 'POST', headers: {'Authorization': 'Bearer ' + settings.oaKey}, body: fd});
+      lines[i] = `<b>OpenAI pictures with portraits: reachable.</b>${r.status === 400 ? ' (It said the test had no image, which is expected and costs nothing.)' : ''}`;
+      if (settings.refBlocked){ settings.refBlocked = false; saveSettings(); }
+    } catch(e){ lines[i] = `<b>OpenAI pictures with portraits: blocked from this browser.</b> Normal pictures still work. Seequil uses the written looks instead of portraits automatically.`; }
+    show();
+  }
   if (settings.anKey) await check('Anthropic', 'https://api.anthropic.com/v1/models', {'x-api-key': settings.anKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true'});
 }
 
