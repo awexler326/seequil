@@ -63,6 +63,12 @@ button:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-v
 .part-mark{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin:0 6px 0 0;vertical-align:-6px;border:0;border-radius:7px;background:#EFE6D2;color:var(--amber);cursor:pointer;padding:0}
 .part-mark svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .part-mark.on{background:var(--gold);color:var(--ink)}
+.flash{background:#FBE3A6!important;box-shadow:0 0 0 2px #FBE3A6;transition:background .3s}
+.find-hit{display:flex;gap:10px;align-items:baseline;text-align:left;border:0;background:none;padding:10px 8px;border-radius:10px;cursor:pointer;font:inherit;font-size:14px;line-height:1.45;min-height:44px}
+.find-hit:hover{background:#F3F1EA}
+.find-hit mark{background:#F6D58A;color:inherit;border-radius:2px}
+.find-pg{flex-shrink:0;min-width:52px;font-size:12px;font-weight:600;color:var(--amber)}
+.cite{border:0;background:#F6EEDC;color:var(--amber);border-radius:6px;font-size:12px;font-weight:600;padding:2px 6px;cursor:pointer}
 .empty-page{color:var(--muted);font-family:Inter,sans-serif;font-size:15px}
 .imagepane{flex:1;position:relative;background:var(--ink);overflow:hidden;display:flex;align-items:center;justify-content:center}
 #sceneImg,#sceneBg{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .4s}
@@ -173,6 +179,7 @@ input[type=range]{width:100%;accent-color:var(--gold);margin:0}
   <div class="topbar">
     <button class="icon-btn" id="toLib" aria-label="Back to library"><svg viewBox="0 0 24 24"><path d="M15 5 L8 12 L15 19"/></svg></button>
     <div class="t"><b id="bTitle"></b><span id="bPage"></span></div>
+    <button class="icon-btn" id="findBtn" aria-label="Search this book" title="Search this book"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></button>
     <button class="icon-btn" id="memBtn" aria-label="Memory: people, places and events"><svg viewBox="0 0 24 24"><circle cx="6" cy="7" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7.2 9.4 L10.8 15.8 M16.9 8.3 L13.2 15.8 M8.5 6.8 L15.5 6.2"/></svg></button>
     <button class="icon-btn" id="hlBtn" aria-label="Highlights and notes"><svg viewBox="0 0 24 24"><path d="M9 15 L4 20 H9 L11 18"/><path d="M14 4 L20 10 L11 19 L5 13 Z"/></svg></button>
     <button class="icon-btn" id="setBtn" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
@@ -854,7 +861,7 @@ function noteDialog(hl){
 }
 
 /* ---------- panels ---------- */
-function closeOverlay(){ $('#overlay').innerHTML = ''; ['#memBtn','#hlBtn','#setBtn'].forEach(s => $(s).classList.remove('on')); }
+function closeOverlay(){ $('#overlay').innerHTML = ''; ['#findBtn','#memBtn','#hlBtn','#setBtn'].forEach(s => $(s).classList.remove('on')); }
 function panel(title, bodyHtml, btn){
   closeOverlay(); hideSel();
   const ov = $('#overlay');
@@ -1692,6 +1699,93 @@ function speakerDialog(q){
   ov.querySelectorAll('[data-who]').forEach(b => b.onclick = () => save(b.dataset.who));
   $('#spOk').onclick = () => { const v = $('#spNew').value.trim(); if (v) save(v); };
 }
+
+/* ---------- search this book (only pages you've reached) ---------- */
+const STOP = new Set('a an and are as at be been but by can could did do does for from had has have how i if in into is it its me my much of on or so than that the their them then there these they this to up was we were what when where which who whom why will with would you your about worth mean means many'.split(' '));
+const qWords = q => (q.toLowerCase().match(/[\p{L}\p{N}'’-]+/gu) || []).filter(w => w.length > 2 && !STOP.has(w));
+function flashRange(pi, s, e){
+  document.querySelectorAll(`#pageText p:nth-child(${pi + 1}) [data-s]`).forEach(t => { if (+t.dataset.s < e && +t.dataset.e > s) t.classList.add('flash'); });
+  const first = document.querySelector('#pageText .flash'); if (first) first.scrollIntoView({block: 'center', behavior: 'smooth'});
+  setTimeout(() => document.querySelectorAll('.flash').forEach(t => t.classList.remove('flash')), 2600);
+}
+function jumpTo(page, pi, s, e){ closeOverlay(); goPage(page); if (pi !== undefined) setTimeout(() => flashRange(pi, s, e), 120); }
+function findText(q){
+  const needle = q.trim().toLowerCase(); const hits = [];
+  if (needle.length < 2) return hits;
+  for (let pg = 1; pg <= P && hits.length < 200; pg++){
+    (book.pages[pg - 1] || []).forEach((t, pi) => {
+      const lt = t.toLowerCase(); let i = lt.indexOf(needle);
+      while (i >= 0 && hits.length < 200){ hits.push({page: pg, pi, s: i, e: i + needle.length, t}); i = lt.indexOf(needle, i + needle.length); }
+    });
+  }
+  return hits;
+}
+function snippetHtml(h){
+  const a = Math.max(0, h.s - 70), b = Math.min(h.t.length, h.e + 90);
+  return (a > 0 ? '…' : '') + esc(h.t.slice(a, h.s)) + '<mark>' + esc(h.t.slice(h.s, h.e)) + '</mark>' + esc(h.t.slice(h.e, b)) + (b < h.t.length ? '…' : '');
+}
+function showFindResults(q, out){
+  const hits = findText(q);
+  if (!hits.length){ out.innerHTML = `<p class="muted">“${esc(q)}” doesn’t appear in pages 1–${P}. Try a shorter word, or tap Ask.</p>`; return; }
+  out.innerHTML = `<div class="muted" style="font-size:14px">${hits.length === 200 ? '200+' : hits.length} match${hits.length === 1 ? '' : 'es'} in pages 1–${P}</div>`;
+  for (const h of hits){
+    const b = document.createElement('button'); b.className = 'find-hit';
+    b.innerHTML = `<span class="find-pg">p. ${h.page}</span><span>${snippetHtml(h)}</span>`;
+    b.onclick = () => jumpTo(h.page, h.pi, h.s, h.e);
+    out.appendChild(b);
+  }
+}
+async function askBook(q, out){
+  if (!aiReady()){ out.innerHTML = '<p class="muted">Questions use AI. Turn on pictures and memory in Settings (and add your API key) to ask.</p>'; return; }
+  out.innerHTML = `<div class="muted" style="display:flex;gap:10px;align-items:center"><span class="spin" style="border-color:rgba(27,36,64,.2);border-top-color:#1B2440"></span>Looking through pages 1–${P}…</div>`;
+  const askedAt = P, bid = book.id;
+  try {
+    let terms = qWords(q);
+    try {
+      const r = await sample(`List search words for finding the answer to a reader's question inside a novel: the key nouns and names, likely synonyms, and singular and plural forms. Question: "${q}". Reply with JSON only: {"terms":["..."]} with at most 12 terms.`, {modelTier: 'quick'});
+      const t = (r && r.text) || ''; const j = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
+      if (Array.isArray(j.terms)) terms = terms.concat(j.terms.map(x => String(x).toLowerCase()));
+    } catch(e){ if (e && e.code) throw e; }
+    terms = [...new Set(terms.map(w => w.trim()).filter(w => w.length > 2))].slice(0, 20);
+    const cands = [];
+    for (let pg = 1; pg <= askedAt; pg++){
+      (book.pages[pg - 1] || []).forEach((t, pi) => { const lt = t.toLowerCase(); let sc = 0; for (const w of terms){ let i = lt.indexOf(w); while (i >= 0){ sc += w.includes(' ') ? 3 : 1; i = lt.indexOf(w, i + 1); } } if (sc) cands.push({page: pg, pi, t, sc}); });
+    }
+    const top = cands.sort((a, b) => b.sc - a.sc).slice(0, 18).sort((a, b) => a.page - b.page || a.pi - b.pi);
+    let excerpts = '', used = 0;
+    for (const c of top){ const piece = `[p. ${c.page}] ${c.t.slice(0, 900)}\n\n`; if (used + piece.length > 14000) break; excerpts += piece; used += piece.length; }
+    const notes = book.entities.filter(en => en.firstPage <= askedAt && terms.some(w => en.name.toLowerCase().includes(w) || [...en.aliases].some(a => a.toLowerCase().includes(w))))
+      .slice(0, 8).map(en => `${en.name} (${en.type})${en.description && en.descPage <= askedAt ? ': ' + en.description : ''} ${en.facts.filter(f => f.page <= askedAt).map(f => `p.${f.page}: ${f.text}`).join(' ')}`).join('\n');
+    if (!excerpts && !notes){ out.innerHTML = `<p class="muted">Nothing about that has come up in pages 1–${askedAt} yet.</p>`; return; }
+    const r = await sample(`A reader of the book "${book.title}" is on page ${askedAt} and asks: "${q}"
+Answer using ONLY the excerpts and notes below. They all come from pages 1–${askedAt}.
+- Never use outside knowledge of this book or anything that happens later, even if you recognize the book. No hints about the future.
+- If they don't answer the question, say it hasn't come up yet in what the reader has read, and mention anything close that has.
+- Keep it short: 1 to 4 sentences. Cite pages like (p. 12).
+
+NOTES FROM MEMORY:
+${notes || '(none)'}
+
+EXCERPTS:
+${excerpts || '(none)'}`, {modelTier: 'quick'});
+    if (!book || book.id !== bid || !out.isConnected) return;
+    const ans = String((r && r.text) || '').trim() || 'Nothing about that has come up yet.';
+    out.innerHTML = `<div class="shield" style="background:#F6F3EC;color:#1B2440"><span style="font-family:Literata,Georgia,serif;font-size:16px;line-height:1.55">${esc(ans).replace(/\(?\bpp?\.\s?(\d{1,5})\)?/g, (m, n) => +n >= 1 && +n <= askedAt ? `<button class="cite" data-pg="${n}">p. ${n}</button>` : m)}</span></div><div class="muted" style="font-size:13px">Answered from pages 1–${askedAt} only.</div>`;
+    out.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => jumpTo(+b.dataset.pg));
+  } catch(e){ aiError(e); if (out.isConnected) out.innerHTML = `<p class="muted">${esc((e && e.message) || 'Couldn’t answer right now. Try again in a moment.')}</p>`; }
+}
+$('#findBtn').onclick = () => {
+  const body = panel('Search this book', `
+    <div class="shield">${svgI('lock')}<span><strong>Spoiler shield on.</strong> Only pages 1–${P}, where you are now.</span></div>
+    <form id="fForm" style="display:flex;flex-direction:column;gap:10px"><label for="fQ" class="muted" style="font-size:14px">A word, a name, or a question</label>
+      <input class="search" id="fQ" autocomplete="off" placeholder="e.g. crown, or How much is a crown worth?">
+      <div class="seg"><button class="btn primary" type="submit">Find words</button><button class="btn" type="button" id="fAsk">Ask</button></div></form>
+    <div id="fRes" style="display:flex;flex-direction:column;gap:6px" aria-live="polite"></div>`, '#findBtn');
+  const inp = $('#fQ'), out = $('#fRes'); inp.focus();
+  $('#fForm').onsubmit = e => { e.preventDefault(); const q = inp.value.trim(); if (q) showFindResults(q, out); };
+  $('#fAsk').onclick = () => { const q = inp.value.trim(); if (q) askBook(q, out); };
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter' && /\?\s*$/.test(inp.value)){ e.preventDefault(); $('#fAsk').click(); } });
+};
 
 /* Memory card */
 const recapCache = new Map();

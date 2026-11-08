@@ -66,7 +66,14 @@ Every picture also has redraw, save, copy-prompt and upload buttons.
 - To change a character's voice or pitch, tap their name in the text to open their memory card, then use **Voice**. **Hear it** plays a sample.
 - If a line goes to the wrong character, select some of the quote and tap **Speaker** in the bar that appears.
 
-## 7. Backups and other devices
+## 7. Search this book
+
+The **magnifying glass** on the reading screen searches only the pages you've reached, so it can't spoil anything.
+
+- **Find words** (free): every place a word or name appears, with a snippet. Tap one to jump there.
+- **Ask**: a question like "How much is a gold crown worth?" gets a short answer with page numbers you can tap. Only pages up to where you are are sent to the AI. Costs a fraction of a cent.
+
+## 8. Backups and other devices
 
 Books live in **this browser on this device**. Your phone and your computer each keep their own library.
 
@@ -74,7 +81,7 @@ Books live in **this browser on this device**. Your phone and your computer each
 - **Restore a backup** loads that file on another device or browser.
 - Clearing your browser's site data deletes the library, so back up now and then.
 
-## 8. If something stops working
+## 9. If something stops working
 
 - **"didn't accept your API key":** re-copy the key into Settings.
 - **"out of credit or hit its spending limit":** add credits on the provider's billing page.
