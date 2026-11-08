@@ -1241,6 +1241,7 @@ function setImgActions(list){
     redraw: ['redraw', 'Redraw this picture', () => activePart ? drawPart(book.parts.find(x => x.id === activePart), true) : (() => { const a = artCache.get(P); if (a && a.url) URL.revokeObjectURL(a.url); artCache.delete(P); requestArt(P, true, true, true); })()],
     save: ['save', 'Save this picture', savePicture],
     delpart: ['trash', 'Remove this passage picture', () => removePart(activePart)],
+    fix: ['note', 'Change this picture', () => fixDialog()],
     prompt: ['prompt', 'Copy an image prompt for another image generator', promptDialog],
     upload: ['upload', 'Upload your own picture', () => pickPicture()]
   };
@@ -1256,8 +1257,96 @@ function renderScene(){
   if (!book) return;
   renderScene2();
   const box = $('#imgActions'); const have = [...box.children].map(b => b.dataset.k);
-  setImgActions([...have, 'prompt', 'upload']);
+  const withFix = []; have.forEach(k => { withFix.push(k); if (k === 'redraw' && shown && canDraw()) withFix.push('fix'); });
+  setImgActions([...withFix, 'prompt', 'upload']);
 }
+/* ---------- change this picture: redraw with the reader's notes ---------- */
+const canDraw = () => (typeof picReady === 'function' ? picReady() : aiReady());
+const usesOpenAI = () => typeof openaiImage === 'function' && settings.picSource === 'openai';
+function blobToDataUrl(b){ return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(b); }); }
+function fixDialog(){
+  if (!shown) return;
+  const part = activePart && book.parts.find(x => x.id === activePart);
+  const label = part ? 'this passage' : 'page ' + P;
+  const oa = usesOpenAI();
+  const cost = oa ? (picCost() + Number(settings.refCost || 0)) : 0;
+  const ov = $('#overlay'); hideSel();
+  ov.innerHTML = `<div class="scrim" data-close></div><form class="modal" role="dialog" aria-modal="true" aria-labelledby="fxH" id="fxF">
+    <b id="fxH">Change the picture for ${esc(label)}</b>
+    <label for="fxT" class="muted" style="font-size:14px">What should be different?</label>
+    <textarea id="fxT" placeholder="For example: Make it night time. Her hair should be shorter. Tobin is holding the lantern, not Mara."></textarea>
+    ${oa ? `<label class="switch" style="font-size:14px"><input type="radio" name="fxM" value="edit" checked> Keep this picture, just make the changes</label>
+    <label class="switch" style="font-size:14px"><input type="radio" name="fxM" value="new"> Draw it again from scratch with the changes</label>
+    <div class="muted" style="font-size:13px">About $${cost.toFixed(3)}.</div>` : ''}
+    <div id="fxE" role="alert" style="font-size:13px;color:#B42318"></div>
+    <div class="row"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn primary">Redraw</button></div></form>`;
+  ov.querySelectorAll('[data-close]').forEach(x => x.onclick = closeOverlay);
+  const tx = $('#fxT'); tx.focus(); tx.oninput = () => { $('#fxE').textContent = ''; };
+  $('#fxF').onsubmit = e => {
+    e.preventDefault();
+    const change = tx.value.trim();
+    if (!change){ $('#fxE').textContent = 'Type what should change first.'; return; }
+    const mode = oa ? (ov.querySelector('input[name=fxM]:checked') || {}).value || 'edit' : 'new';
+    const base = {...shown};
+    closeOverlay();
+    redrawWithChanges(part, change, mode, base);
+  };
+}
+async function redrawWithChanges(part, change, mode, base){
+  const page = part ? part.page : P;
+  const text = part ? part.text : (book.pages[page - 1] || []).join('\n\n');
+  const prev = part ? partArt.get(part.id) : artCache.get(page);
+  if (part) partArt.set(part.id, {status: 'loading'}); else artCache.set(page, {status: 'loading'});
+  renderScene();
+  try {
+    await ensureLooks(text, page);
+    let out = null, svg = null;
+    if (usesOpenAI()){
+      const lk = looksBlock(text, page);
+      const refs = await portraitRefs(text, page);
+      const lookPart = lk ? '\n\nCHARACTER LOOKS. Draw each person exactly like this:\n' + lk : '';
+      if (mode === 'edit' && (base.img || base.svg)){
+        const cur = base.img || await blobToDataUrl(await svgToPng(base.svg));
+        const refNote = refs.length ? '\n\nThe other images are character references: ' + refs.map((x, i) => `image ${i + 2} is ${x.name}`).join('; ') + '. Keep each person looking like their reference.' : '';
+        out = await openaiImage(`Edit the first image, an illustration from the book "${book.title}". Make ONLY these changes: ${change}
+Keep everything else the same: the composition, setting, lighting, art style and every character's appearance.${lookPart}${refNote}`, null, [{name: 'current picture', img: cur}, ...refs]);
+      } else {
+        const key = part ? part.id : 'p' + page;
+        let scene = promptCache.get(key); if (!scene || scene === 'NONE') scene = await writeImagePrompt({kind: part ? 'part' : 'page', part, key, text, page}, false);
+        if (scene === 'NONE') scene = text.slice(0, 1200);
+        const refNote = refs.length ? '\n\nREFERENCE IMAGES: ' + refs.map((x, i) => `image ${i + 1} is ${x.name}`).join('; ') + '. Keep each person\'s face, hair, build and clothing exactly as in their reference image.' : '';
+        out = await openaiImage(String(scene).slice(0, 2200) + `\n\nTHE READER ASKED FOR THESE CHANGES, follow them exactly: ${change}` + lookPart + refNote, null, refs);
+      }
+    } else {
+      const known = knownFor(text, page);
+      const prompt = `You are the illustrator for an illustrated e-reader. Draw ONE illustration for ${part ? 'this passage' : 'this page'} of the book "${book.title}".
+${ART_RULES}
+- The reader saw your last picture and asked for these changes. Follow them exactly: ${change}
+${known ? 'Characters and places. Draw every character exactly as described here (same hair, eye and skin color, age, build and clothing in every picture):\n' + known + '\n' : ''}
+TEXT:
+"""
+${text.slice(0, 5000)}
+"""`;
+      const r = typeof callText === 'function' ? await callText(prompt, {modelTier: 'default', provider: 'anthropic', maxTokens: 12000}) : await sample(prompt, {modelTier: 'default'});
+      svg = cleanSvg(r && r.text);
+      if (!svg || svg === 'NONE') throw {code: 'api', message: 'Couldn’t redraw that picture. Try describing the change differently.'};
+    }
+    if (part){
+      if (out){ part.img = out; delete part.svg; setPartArt(part.id, null, out); } else { part.svg = svg; delete part.img; setPartArt(part.id, svg); }
+      if (db) try { await bref().collection('parts').doc(part.id).set({...part}); } catch(e){}
+    } else {
+      if (out) setArt(page, null, out); else setArt(page, svg);
+      if (db) try { await bref().collection('art').doc(String(page)).set(out ? {page, img: out} : {page, svg}); } catch(e){}
+    }
+    toast('Picture updated');
+  } catch(e){
+    aiError(e);
+    if (part){ if (prev) partArt.set(part.id, prev); else partArt.delete(part.id); } else { if (prev) artCache.set(page, prev); else artCache.delete(page); }
+    if (e && e.message && e.code === 'api') toast(e.message);
+  }
+  renderScene();
+}
+
 /* ---------- partitions: a passage with its own picture ---------- */
 function setPartArt(id, svg, img){
   const old = partArt.get(id); if (old && old.url) URL.revokeObjectURL(old.url);

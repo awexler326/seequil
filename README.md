@@ -53,7 +53,7 @@ Seequil's figures are estimates. Your OpenAI or Anthropic billing page has the r
 - **Always:** every page is drawn as you read.
 - **The Pictures on/off switch** stops all new pictures. Pictures you already have still show.
 
-Every picture also has redraw, save, copy-prompt and upload buttons.
+Every picture also has redraw, **change this picture** (type what should be different, then either keep the picture and just fix those things, or draw it again with your notes), save, copy-prompt and upload buttons.
 
 **Character portraits** (switch in Settings, off by default): Seequil draws each main character once and sends that portrait as a guide with every ChatGPT picture they're in, so faces stay consistent. A portrait costs about 1¢ once. Each picture costs about 0.6¢ more per character shown. By default only the main characters (the 4 mentioned most so far) get portraits; change the number in Settings, or set any character to Always or Never on their memory card, where you can also redraw, upload or remove their portrait. With the switch off, pictures use each character's written look.
 
