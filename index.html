@@ -356,7 +356,7 @@ async function callText(prompt, opts = {}){
       r = await fetch('https://api.anthropic.com/v1/messages', {method: 'POST', headers: {'content-type': 'application/json', 'x-api-key': settings.anKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true'},
         body: JSON.stringify({model, max_tokens: opts.maxTokens || 4000, messages: [{role: 'user', content: prompt}]})});
     }
-  } catch(e){ throw {code: 'api', message: 'Couldn’t reach the AI service. Are you online?'}; }
+  } catch(e){ throw {code: 'api', message: navigator.onLine === false ? 'You seem to be offline.' : 'This browser couldn’t reach ' + (prov === 'openai' ? 'OpenAI' : 'Anthropic') + '. Usually an ad or privacy blocker, or a work or school network blocking AI sites. Settings has a Test connection button.'}; }
   j = await r.json().catch(() => ({}));
   if (!r.ok) throw apiErr(prov, r.status, j);
   if (prov === 'openai'){
@@ -386,7 +386,7 @@ async function openaiImage(prompt, sizeOverride, refs){
       if (/^dall-e/i.test(settings.oaImage)){ body.response_format = 'b64_json'; body.size = '1024x1792'; body.quality = settings.picQuality === 'medium' ? 'hd' : 'standard'; }
       r = await fetch('https://api.openai.com/v1/images/generations', {method: 'POST', headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + settings.oaKey}, body: JSON.stringify(body)});
     }
-  } catch(e){ throw {code: 'api', message: 'Couldn’t reach OpenAI. Are you online?'}; }
+  } catch(e){ throw {code: 'api', message: navigator.onLine === false ? 'You seem to be offline.' : 'This browser couldn’t reach OpenAI. Usually an ad or privacy blocker, or a work or school network blocking AI sites. Settings has a Test connection button.'}; }
   const j = await r.json().catch(() => ({}));
   if (!r.ok){
     const msg = (j && j.error && j.error.message) || '';
@@ -408,6 +408,30 @@ const downloadsLocal = {save: async ({filename, data}) => {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 5000);
   return {status: 'saved'};
 }};
+
+/* ---------- connection check ---------- */
+async function testConnection(out){
+  const lines = [];
+  const show = () => { out.innerHTML = lines.map(l => `<div>${l}</div>`).join(''); };
+  if (navigator.onLine === false){ out.textContent = 'Your device says it’s offline. Check your Wi-Fi or internet connection.'; return; }
+  const check = async (name, url, headers) => {
+    lines.push(`${esc(name)}: checking…`); show(); const i = lines.length - 1;
+    try {
+      const r = await fetch(url, {headers});
+      const j = await r.json().catch(() => ({}));
+      const m = (j && j.error && (j.error.message || j.error.type)) || '';
+      lines[i] = r.ok ? `<b>${esc(name)}: connected, and your key works.</b>`
+        : (r.status === 401 || r.status === 403) ? `<b>${esc(name)}: reached, but it rejected your key.</b> Copy the key again with no spaces, or make a new one.`
+        : `<b>${esc(name)}: reached, but it answered with an error (${r.status}).</b> ${esc(m)}`;
+    } catch(e){
+      lines[i] = `<b>${esc(name)}: blocked. This browser couldn’t reach it at all.</b> Most often this is an ad or privacy blocker (turn it off for this site), a work or school network that blocks AI sites (try your phone’s hotspot), or a browser setting such as strict tracking prevention. Trying another browser helps narrow it down. If none of that helps, OpenAI may be having an outage.`;
+    }
+    show();
+  };
+  if (!settings.oaKey && !settings.anKey){ out.textContent = 'Add an API key first.'; return; }
+  if (settings.oaKey) await check('OpenAI', 'https://api.openai.com/v1/models', {'Authorization': 'Bearer ' + settings.oaKey});
+  if (settings.anKey) await check('Anthropic', 'https://api.anthropic.com/v1/models', {'x-api-key': settings.anKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true'});
+}
 
 /* ---------- boot ---------- */
 async function boot(){
@@ -1044,6 +1068,7 @@ $('#setBtn').onclick = () => {
     <div class="field"><label for="oaKey">OpenAI API key</label><input class="search" type="password" id="oaKey" autocomplete="off" spellcheck="false" placeholder="sk-…" value="${esc(settings.oaKey)}"></div>
     <div class="field"><label for="anKey">Anthropic API key (optional, for Claude)</label><input class="search" type="password" id="anKey" autocomplete="off" spellcheck="false" placeholder="sk-ant-…" value="${esc(settings.anKey)}"></div>
     <div class="muted" style="font-size:14px">Keys stay in this browser and are sent only to OpenAI or Anthropic. Backups never include them.</div>
+    <div class="field"><button class="btn small" id="connTest" style="align-self:flex-start">Test connection</button><div id="connOut" role="status" aria-live="polite" style="font-size:14px;line-height:1.45"></div></div>
     <h3 class="h3">Spending</h3>
     <div class="field"><label for="budIn">Monthly budget in dollars (0 = no limit)</label>${num('budIn', settings.budget, '0.5')}<div class="muted" id="spentV" style="font-size:14px">${spentLine()}</div><button class="btn small" id="spReset" style="align-self:flex-start">Reset this month’s count</button><div class="muted" style="font-size:14px">Seequil stops calling OpenAI or Anthropic when it reaches this. Amounts are estimates; your provider’s billing page has the real numbers.</div></div>
     <details><summary style="cursor:pointer;font-weight:600;min-height:32px">Advanced: models and prices</summary><div style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
@@ -1075,6 +1100,7 @@ $('#setBtn').onclick = () => {
   $('#budIn').addEventListener('change', () => { $('#spentV').textContent = spentLine(); });
   $('#spReset').onclick = () => { settings.spend = {month: monthNow(), usd: 0}; saveSettings(); $('#spentV').textContent = spentLine(); renderScene(); };
   $('#styleIn').onchange = e => { settings.style = e.target.value.trim() || DEFAULT_STYLE; saveSettings(); };
+  $('#connTest').onclick = () => testConnection($('#connOut'));
   const setFs = d => { settings.fs = Math.max(14, Math.min(28, settings.fs + d)); $('#fsV').textContent = settings.fs + 'px'; applySettings(); saveSettings(); };
   $('#themeSel').onchange = e => { settings.theme = e.target.value; applyTheme(); saveSettings(); };
   $('#fsDn').onclick = () => setFs(-1); $('#fsUp').onclick = () => setFs(1);

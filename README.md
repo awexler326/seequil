@@ -87,6 +87,7 @@ Books live in **this browser on this device**. Your phone and your computer each
 
 ## 9. If something stops working
 
+- **"couldn't reach OpenAI" / "Couldn't reach the AI service":** open Settings → **Test connection**. "Blocked" usually means an ad or privacy blocker, or a work or school network blocking AI sites. Try turning blockers off for this site, your phone's hotspot, or another browser.
 - **"didn't accept your API key":** re-copy the key into Settings.
 - **"out of credit or hit its spending limit":** add credits on the provider's billing page.
 - **AI model names change over time.** If OpenAI or Anthropic retires a model, update the names under **Settings → Advanced: models and prices**. The defaults are `gpt-6-luna` (text), `gpt-image-2.5-flare` (pictures), `claude-sonnet-5-5` and `claude-haiku-5-5`.
