@@ -48,7 +48,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-v
 .topbar{height:60px;flex-shrink:0;padding:0 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
 .topbar .t{flex:1;min-width:0;display:flex;flex-direction:column}
 .topbar .t b{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.topbar .t span{font-size:13px;color:var(--muted)}
+.topbar .t span{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.toc-cur{background:#EAF0F7}
 .icon-btn.on{background:#DCE7F3;color:var(--blue)}
 .spread{flex:1;display:flex;min-height:0}
 .textpane{width:50%;overflow:auto;padding:40px 56px 56px}
@@ -179,6 +180,7 @@ input[type=range]{width:100%;accent-color:var(--gold);margin:0}
   <div class="topbar">
     <button class="icon-btn" id="toLib" aria-label="Back to library"><svg viewBox="0 0 24 24"><path d="M15 5 L8 12 L15 19"/></svg></button>
     <div class="t"><b id="bTitle"></b><span id="bPage"></span></div>
+    <button class="icon-btn" id="tocBtn" aria-label="Contents" title="Contents"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
     <button class="icon-btn" id="findBtn" aria-label="Search this book" title="Search this book"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></button>
     <button class="icon-btn" id="memBtn" aria-label="Memory: people, places and events"><svg viewBox="0 0 24 24"><circle cx="6" cy="7" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7.2 9.4 L10.8 15.8 M16.9 8.3 L13.2 15.8 M8.5 6.8 L15.5 6.2"/></svg></button>
     <button class="icon-btn" id="hlBtn" aria-label="Highlights and notes"><svg viewBox="0 0 24 24"><path d="M9 15 L4 20 H9 L11 18"/><path d="M14 4 L20 10 L11 19 L5 13 Z"/></svg></button>
@@ -487,14 +489,14 @@ async function importFile(file){
     st.textContent = (e && e.code === 'quota_exceeded') ? 'Your storage is full. Delete a book and try again.' : (e && e.userMsg) || 'Couldn’t open that file. Is it damaged or password-protected?';
   } finally { importing = false; }
 }
-async function saveNewBook({id, title, pages}, st){
-  book = {id, title, numPages: pages.length, page: 1, voices: {}, genders: {}, pages, codex: new Map(), entities: [], hl: [], parts: []};
+async function saveNewBook({id, title, pages, toc}, st){
+  book = {id, title, toc: toc || [], numPages: pages.length, page: 1, voices: {}, genders: {}, pages, codex: new Map(), entities: [], hl: [], parts: []};
   if (db){
     for (let g = 0; g * GROUP < pages.length; g++){
       st.textContent = `Saving… ${Math.min((g+1)*GROUP, pages.length)} of ${pages.length} pages`;
       await bref().collection('pages').doc('g' + g).set({g, pages: pages.slice(g*GROUP, (g+1)*GROUP).map(p => ({paras: p}))});
     }
-    const meta = {kind:'book', id, title, numPages: pages.length, page: 1, createdAt: Date.now(), updatedAt: Date.now()};
+    const meta = {kind:'book', id, title, toc: toc || [], numPages: pages.length, page: 1, createdAt: Date.now(), updatedAt: Date.now()};
     await bref().set(meta);
     libBooks.unshift(meta);
   }
@@ -516,7 +518,17 @@ async function readPdf(file, st){
     pages.push(paras);
   }
   if (chars < 200){ st.textContent = 'This PDF doesn’t seem to have selectable text (it may be scanned images), so Seequil can’t read it.'; return null; }
-  return {id, title, pages};
+  let toc = [];
+  try {
+    const outline = await pdf.getOutline();
+    const walk = async (items, level) => { for (const it of (items || [])){
+      try { const dest = typeof it.dest === 'string' ? await pdf.getDestination(it.dest) : it.dest; if (Array.isArray(dest) && dest[0]){ const idx = typeof dest[0] === 'number' ? dest[0] : await pdf.getPageIndex(dest[0]); toc.push({title: String(it.title || '').replace(/\s+/g, ' ').trim().slice(0, 120), page: idx + 1, level}); } } catch(e){}
+      if (level < 2 && it.items && it.items.length) await walk(it.items, level + 1); } };
+    await walk(outline, 1);
+  } catch(e){}
+  toc = toc.filter(e => e.title && e.page >= 1 && e.page <= pages.length);
+  if (toc.length < 2) toc = detectChapters(pages);
+  return {id, title, pages, toc};
 }
 
 /* EPUB: unzip, follow the reading order (spine), pull out paragraphs, cut into pages */
@@ -549,56 +561,119 @@ async function readEpub(file, st){
   const manifest = new Map(byTag(opf, 'item').map(it => [it.getAttribute('id'), it.getAttribute('href')]));
   const spine = byTag(opf, 'itemref').filter(r => r.getAttribute('linear') !== 'no').map(r => manifest.get(r.getAttribute('idref'))).filter(Boolean);
   const pages = []; let chars = 0;
+  const navEntries = await epubToc(zip, opf, base);
+  const want = new Map(); navEntries.forEach(e => { if (!want.has(e.path)) want.set(e.path, new Set()); if (e.frag) want.get(e.path).add(e.frag); });
+  const where = new Map(); const sections = [];
   for (let i = 0; i < spine.length; i++){
     st.textContent = `Reading section ${i + 1} of ${spine.length}…`;
     const path = joinPath(base, decodeURIComponent(spine[i].split('#')[0]));
+    const start = pages.length;
+    where.set(path + '#', start);
     const f = zip.file(path); if (!f) continue;
     const src = await f.async('string');
     let doc = new DOMParser().parseFromString(src, 'application/xhtml+xml');
     if (doc.querySelector('parsererror')) doc = new DOMParser().parseFromString(src, 'text/html');
-    const paras = epubBlocks(doc.body || doc.documentElement);
+    const frags = want.get(path); const anchors = [];
+    if (frags) frags.forEach(fr => { const el = doc.getElementById(fr) || doc.querySelector(`[name="${fr.replace(/"/g, '')}"]`); if (el) anchors.push([fr, el]); });
+    const {texts: paras, els} = epubBlocks2(doc.body || doc.documentElement);
     if (!paras.length) continue;
     chars += paras.join('').length;
-    pages.push(...paginate(paras));
+    const anchorBi = els ? anchors.map(([fr, el]) => [fr, els.findIndex(b => b === el || el.contains(b) || (el.compareDocumentPosition(b) & 4))]).filter(x => x[1] >= 0) : [];
+    const breaks = new Set([...anchorBi.map(x => x[1]), ...paras.map((t, bi) => looksLikeHeading(t) ? bi : -1)].filter(bi => bi > 0));
+    const {pages: pg, blockPage} = paginate2(paras, breaks);
+    pages.push(...pg);
+    sections.push({page: start + 1, first: paras[0]});
+    anchorBi.forEach(([fr, bi]) => { if (blockPage[bi] !== undefined) where.set(path + '#' + fr, start + blockPage[bi]); });
   }
   if (chars < 200){ st.textContent = 'Couldn’t find any text in this EPUB.'; return null; }
-  return {id: hashBytes(u8), title, pages};
+  let toc = [];
+  navEntries.forEach(e => { const pg = where.get(e.path + '#' + e.frag) ?? where.get(e.path + '#'); if (pg !== undefined && pg < pages.length) toc.push({title: e.title.slice(0, 120), page: pg + 1, level: e.level || 1}); });
+  toc = toc.filter((e, i) => !(i && toc[i - 1].page === e.page && toc[i - 1].title === e.title));
+  if (toc.length < 2) toc = detectChapters(pages);
+  if (toc.length < 2 && sections.length >= 2) toc = sections.map((x, i) => ({title: x.first.length <= 80 ? x.first : 'Section ' + (i + 1), page: x.page, level: 1}));
+  return {id: hashBytes(u8), title, pages, toc};
 }
-function epubBlocks(root){
-  if (!root) return [];
+function epubBlocks(root){ return epubBlocks2(root).texts; }
+function epubBlocks2(root){
+  if (!root) return {texts: [], els: null};
   root.querySelectorAll('script,style,nav,aside[epub\\:type="footnote"]').forEach(n => n.remove());
   const SEL = 'p,h1,h2,h3,h4,h5,h6,li,blockquote,pre,dt,dd,figcaption,td';
   const clean = s => s.replace(/\s+/g, ' ').trim();
-  let els = [...root.querySelectorAll(SEL)].filter(e => !e.querySelector(SEL));
-  let out = els.map(e => clean(e.textContent)).filter(Boolean);
+  let pairs = [...root.querySelectorAll(SEL)].filter(e => !e.querySelector(SEL)).map(e => [e, clean(e.textContent)]).filter(x => x[1]);
+  let out = pairs.map(x => x[1]), els = pairs.map(x => x[0]);
   const total = clean(root.textContent).length;
-  if (out.join('').length < total * 0.5){
+  if (out.join('').length < total * 0.5){ els = null;
     const divs = [...root.querySelectorAll('div')].filter(d => !d.querySelector('div,' + SEL));
     const more = divs.map(d => clean(d.textContent)).filter(Boolean);
     if (more.join('').length > out.join('').length) out = more;
     if (out.join('').length < total * 0.5) out = root.textContent.split(/\n\s*\n/).map(clean).filter(Boolean);
   }
-  return out;
+  return {texts: out, els};
 }
-function paginate(paras){
+function paginate(paras){ return paginate2(paras).pages; }
+function paginate2(paras, breaks){
   const TARGET = 1500, MAX = 2200;
   const pieces = [];
-  for (const p of paras){
-    if (p.length <= MAX){ pieces.push(p); continue; }
+  paras.forEach((p, bi) => {
+    if (p.length <= MAX){ pieces.push([p, bi]); return; }
     let buf = '';
     for (const s of splitSentences(p).map(x => p.slice(x.s, x.e))){
-      if (buf && (buf + s).length > TARGET){ pieces.push(buf.trim()); buf = ''; }
+      if (buf && (buf + s).length > TARGET){ pieces.push([buf.trim(), bi]); buf = ''; }
       buf += s;
     }
-    if (buf.trim()) pieces.push(buf.trim());
-  }
-  const pages = []; let cur = [], len = 0;
-  for (const p of pieces){
-    if (cur.length && len + p.length > TARGET){ pages.push(cur); cur = []; len = 0; }
+    if (buf.trim()) pieces.push([buf.trim(), bi]);
+  });
+  const pages = [], blockPage = []; let cur = [], len = 0;
+  for (const [p, bi] of pieces){
+    const fresh = breaks && breaks.has(bi) && blockPage[bi] === undefined;
+    if (cur.length && (fresh || len + p.length > TARGET)){ pages.push(cur); cur = []; len = 0; }
+    if (blockPage[bi] === undefined) blockPage[bi] = pages.length;
     cur.push(p); len += p.length;
   }
   if (cur.length) pages.push(cur);
-  return pages;
+  return {pages, blockPage};
+}
+async function epubToc(zip, opf, base){
+  // EPUB 3 nav document, or EPUB 2 toc.ncx: [{title, path, frag, level}]
+  const items = byTag(opf, 'item');
+  const navIt = items.find(it => /\bnav\b/.test(it.getAttribute('properties') || ''));
+  const ncxIt = items.find(it => it.getAttribute('media-type') === 'application/x-dtbncx+xml');
+  const out = [];
+  const resolve = (from, href) => { const dir = from.includes('/') ? from.slice(0, from.lastIndexOf('/') + 1) : ''; const [h, frag] = String(href || '').split('#'); return {path: h ? joinPath(dir, decodeURIComponent(h)) : from, frag: frag ? decodeURIComponent(frag) : ''}; };
+  try {
+    if (navIt){
+      const navPath = joinPath(base, decodeURIComponent(navIt.getAttribute('href')));
+      const f = zip.file(navPath);
+      if (f){
+        const src = await f.async('string');
+        let doc = new DOMParser().parseFromString(src, 'application/xhtml+xml');
+        if (doc.querySelector('parsererror')) doc = new DOMParser().parseFromString(src, 'text/html');
+        const navs = [...doc.getElementsByTagNameNS('*', 'nav')];
+        const nav = navs.find(n => /toc/.test(n.getAttribute('epub:type') || n.getAttributeNS('http://www.idpf.org/2007/ops', 'type') || n.getAttribute('role') || '')) || navs[0];
+        if (nav){
+          const walk = (ol, level) => { [...ol.children].forEach(li => { const a = [...li.children].find(c => /^a$/i.test(c.localName)) || li.querySelector('a'); const sub = [...li.children].find(c => /^ol$/i.test(c.localName));
+            if (a && a.getAttribute('href')){ const r = resolve(navPath, a.getAttribute('href')); out.push({title: a.textContent.replace(/\s+/g, ' ').trim(), ...r, level}); }
+            if (sub && level < 2) walk(sub, level + 1); }); };
+          const ol = [...nav.children].find(c => /^ol$/i.test(c.localName)) || nav.querySelector('ol');
+          if (ol) walk(ol, 1);
+        }
+      }
+    }
+    if (!out.length && ncxIt){
+      const ncxPath = joinPath(base, decodeURIComponent(ncxIt.getAttribute('href')));
+      const f = zip.file(ncxPath);
+      if (f){
+        const ncx = xmlOf(await f.async('string'));
+        const map = byTag(ncx, 'navMap')[0];
+        const walk = (el, level) => { [...el.children].filter(c => c.localName === 'navPoint').forEach(np => {
+          const lab = [...np.children].find(c => c.localName === 'navLabel'); const con = [...np.children].find(c => c.localName === 'content');
+          if (lab && con) out.push({title: lab.textContent.replace(/\s+/g, ' ').trim(), ...resolve(ncxPath, con.getAttribute('src')), level});
+          if (level < 2) walk(np, level + 1); }); };
+        if (map) walk(map, 1);
+      }
+    }
+  } catch(e){}
+  return out.filter(e => e.title);
 }
 
 async function extractPage(pdf, i){
@@ -641,9 +716,10 @@ async function openBook(id){
     const m = meta.data();
     const pages = [];
     pg.docs.map(d => d.data()).sort((a,b)=>a.g-b.g).forEach(g => (g.pages||[]).forEach(p => pages.push(p.paras || [])));
-    book = {id, title: m.title, numPages: m.numPages, page: m.page || 1, voices: m.voices || {}, genders: m.genders || {}, pages, codex: new Map(), entities: [], hl: hl.docs.map(d => d.data()), parts: pt.docs.map(d => ({...d.data()}))};
+    book = {id, title: m.title, toc: Array.isArray(m.toc) ? m.toc : null, numPages: m.numPages, page: m.page || 1, voices: m.voices || {}, genders: m.genders || {}, pages, codex: new Map(), entities: [], hl: hl.docs.map(d => d.data()), parts: pt.docs.map(d => ({...d.data()}))};
     cx.docs.forEach(d => { const c = d.data(); book.codex.set(c.idx, c); });
     rebuildEntities();
+    if (!book.toc){ book.toc = detectChapters(book.pages); try { await ref.update({toc: book.toc}); } catch(e){} }
     st.textContent = '';
     enterReader(m.page || 1);
   } catch(e){ st.textContent = 'Couldn’t open that book right now. Try again.'; }
@@ -671,7 +747,7 @@ function goPage(n, keepTts){
   if (!keepTts) stopTts();
   hideSel();
   P = n; book.page = n; activePart = null;
-  $('#bPage').textContent = `Page ${P} of ${book.numPages}`;
+  $('#bPage').textContent = pageLabel(P);
   $('#pageNum').textContent = 'PAGE ' + P;
   $('#pgSlider').value = P;
   renderText();
@@ -684,7 +760,7 @@ function goPage(n, keepTts){
 $('#prevPg').onclick = () => goPage(P - 1);
 $('#nextPg').onclick = () => goPage(P + 1);
 $('#pgSlider').addEventListener('change', e => goPage(+e.target.value));
-$('#pgSlider').addEventListener('input', e => { $('#bPage').textContent = `Page ${e.target.value} of ${book.numPages}`; });
+$('#pgSlider').addEventListener('input', e => { $('#bPage').textContent = pageLabel(+e.target.value); });
 document.addEventListener('keydown', e => {
   if ($('#reader').hidden || e.metaKey || e.ctrlKey || e.altKey) return;
   if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement && document.activeElement.tagName)) return;
@@ -861,7 +937,7 @@ function noteDialog(hl){
 }
 
 /* ---------- panels ---------- */
-function closeOverlay(){ $('#overlay').innerHTML = ''; ['#findBtn','#memBtn','#hlBtn','#setBtn'].forEach(s => $(s).classList.remove('on')); }
+function closeOverlay(){ $('#overlay').innerHTML = ''; ['#tocBtn','#findBtn','#memBtn','#hlBtn','#setBtn'].forEach(s => $(s).classList.remove('on')); }
 function panel(title, bodyHtml, btn){
   closeOverlay(); hideSel();
   const ov = $('#overlay');
@@ -1699,6 +1775,55 @@ function speakerDialog(q){
   ov.querySelectorAll('[data-who]').forEach(b => b.onclick = () => save(b.dataset.who));
   $('#spOk').onclick = () => { const v = $('#spNew').value.trim(); if (v) save(v); };
 }
+
+/* ---------- chapters (table of contents) ---------- */
+const CH_RX = /^(chapter|part|book|prologue|epilogue|interlude|afterword|foreword|introduction|preface|act|section)\b/i;
+const NUM_WORDS = 'one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty';
+const BARE_NUM = new RegExp('^([ivxlcdm]{1,7}|\\d{1,3}|(' + NUM_WORDS + ')([- ](' + NUM_WORDS + '))?)[.:]?$', 'i');
+function looksLikeHeading(t){ const s = t.trim(); return s.length <= 80 && (CH_RX.test(s) || BARE_NUM.test(s)); }
+function detectChapters(pages){
+  // headings at the top of a page; ignore lines repeated on many pages (running headers)
+  const tops = new Map();
+  pages.forEach(ps => (ps || []).slice(0, 2).forEach(t => { const k = t.trim().toLowerCase(); tops.set(k, (tops.get(k) || 0) + 1); }));
+  const toc = [];
+  pages.forEach((ps, i) => {
+    const a = (ps || [])[0]; if (!a || !looksLikeHeading(a)) return;
+    if ((tops.get(a.trim().toLowerCase()) || 0) > Math.max(3, pages.length * 0.25)) return;
+    let title = a.trim(); const b = (ps || [])[1];
+    if (b && b.trim().length <= 60 && !/[.!?,;]$/.test(b.trim()) && !looksLikeHeading(b) && (BARE_NUM.test(title) || /^(chapter|part|book)\s+\S+$/i.test(title))) title += ': ' + b.trim();
+    toc.push({title, page: i + 1, level: 1});
+  });
+  return toc.length >= 2 ? toc : [];
+}
+function chapterAt(page){ let c = null; for (const e of (book.toc || [])) { if (e.page <= page && (e.level || 1) === 1) c = e; } return c; }
+function maskTitle(t, n){ const m = String(t).match(/^((chapter|part|book|act|section)\s+[\w-]+)/i); return m ? m[1] : (CH_RX.test(t) ? t.split(/[:—–-]/)[0].trim() : 'Chapter ' + n); }
+function pageLabel(pg){ const c = chapterAt(pg); return (c ? c.title + ' · ' : '') + `Page ${pg} of ${book.numPages}`; }
+$('#tocBtn').onclick = () => {
+  const toc = book.toc || [];
+  const cur = chapterAt(P); const curIdx = cur ? toc.indexOf(cur) : -1;
+  const L1 = toc.filter(e => (e.level || 1) === 1);
+  const prev = cur ? L1[L1.indexOf(cur) - 1] : null;
+  const next = L1.find(e => e.page > P);
+  const body = panel('Contents', toc.length ? `
+    <div class="seg" style="flex-wrap:wrap"><button class="btn small" id="tocPrev"${prev || (cur && cur.page < P) ? '' : ' disabled'}>‹ ${cur && cur.page < P ? 'Start of this chapter' : 'Previous chapter'}</button><button class="btn small" id="tocNext"${next ? '' : ' disabled'}>Next chapter ›</button></div>
+    <label class="switch" style="font-size:14px"><input type="checkbox" id="tocFut"${settings.tocFuture ? ' checked' : ''}> Show titles of chapters ahead (may spoil)</label>
+    <div id="tocList" style="display:flex;flex-direction:column;gap:2px"></div>` : `<p class="muted">Seequil couldn’t find chapter headings in this book. Use the page slider at the bottom to move around.</p>`, '#tocBtn');
+  if (!toc.length) return;
+  const list = $('#tocList'); let n = 0;
+  toc.forEach((e, i) => {
+    if ((e.level || 1) === 1) n++;
+    const ahead = e.page > P && !settings.tocFuture;
+    const b = document.createElement('button'); b.className = 'ent-item' + (i === curIdx ? ' toc-cur' : '');
+    if ((e.level || 1) > 1) b.style.paddingLeft = '28px';
+    b.innerHTML = `<span>${esc(ahead ? maskTitle(e.title, n) : e.title)}${i === curIdx ? ' <small style="color:#1F5E8C;font-weight:600">· you’re here</small>' : ''}</span><small>p. ${e.page}</small>`;
+    b.onclick = () => { closeOverlay(); goPage(e.page); };
+    list.appendChild(b);
+  });
+  const here = list.querySelector('.toc-cur'); if (here) here.scrollIntoView({block: 'center'});
+  $('#tocFut').onchange = ev => { settings.tocFuture = ev.target.checked; saveSettings(); $('#tocBtn').click(); };
+  $('#tocPrev').onclick = () => { closeOverlay(); goPage(cur && cur.page < P ? cur.page : prev.page); };
+  $('#tocNext').onclick = () => { closeOverlay(); goPage(next.page); };
+};
 
 /* ---------- search this book (only pages you've reached) ---------- */
 const STOP = new Set('a an and are as at be been but by can could did do does for from had has have how i if in into is it its me my much of on or so than that the their them then there these they this to up was we were what when where which who whom why will with would you your about worth mean means many'.split(' '));
