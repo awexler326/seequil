@@ -371,7 +371,7 @@ async function openaiImage(prompt){
   checkBudget(picCost());
   const pane = $('#imagepane').getBoundingClientRect(); const ratio = pane.width && pane.height ? pane.width / pane.height : 0.7;
   const size = ratio > 1.15 ? '1536x1024' : ratio < 0.87 ? '1024x1536' : '1024x1024';
-  const body = {model: settings.oaImage, prompt: prompt.slice(0, 3800), size, quality: settings.picQuality, n: 1};
+  const body = {model: settings.oaImage, prompt: prompt.slice(0, 3950), size, quality: settings.picQuality, n: 1};
   if (/^dall-e/i.test(settings.oaImage)){ body.response_format = 'b64_json'; body.size = '1024x1792'; body.quality = settings.picQuality === 'medium' ? 'hd' : 'standard'; }
   let r;
   try { r = await fetch('https://api.openai.com/v1/images/generations', {method: 'POST', headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + settings.oaKey}, body: JSON.stringify(body)}); }
@@ -498,7 +498,7 @@ async function importFile(file){
   } finally { importing = false; }
 }
 async function saveNewBook({id, title, pages, toc}, st){
-  book = {id, title, toc: toc || [], numPages: pages.length, page: 1, voices: {}, genders: {}, pages, codex: new Map(), entities: [], hl: [], parts: []};
+  book = {id, title, toc: toc || [], numPages: pages.length, page: 1, voices: {}, genders: {}, looks: {}, pages, codex: new Map(), entities: [], hl: [], parts: []};
   if (db){
     for (let g = 0; g * GROUP < pages.length; g++){
       st.textContent = `Saving… ${Math.min((g+1)*GROUP, pages.length)} of ${pages.length} pages`;
@@ -724,7 +724,7 @@ async function openBook(id){
     const m = meta.data();
     const pages = [];
     pg.docs.map(d => d.data()).sort((a,b)=>a.g-b.g).forEach(g => (g.pages||[]).forEach(p => pages.push(p.paras || [])));
-    book = {id, title: m.title, toc: Array.isArray(m.toc) ? m.toc : null, numPages: m.numPages, page: m.page || 1, voices: m.voices || {}, genders: m.genders || {}, pages, codex: new Map(), entities: [], hl: hl.docs.map(d => d.data()), parts: pt.docs.map(d => ({...d.data()}))};
+    book = {id, title: m.title, toc: Array.isArray(m.toc) ? m.toc : null, numPages: m.numPages, page: m.page || 1, voices: m.voices || {}, genders: m.genders || {}, looks: m.looks || {}, pages, codex: new Map(), entities: [], hl: hl.docs.map(d => d.data()), parts: pt.docs.map(d => ({...d.data()}))};
     cx.docs.forEach(d => { const c = d.data(); book.codex.set(c.idx, c); });
     rebuildEntities();
     if (!book.toc){ book.toc = detectChapters(book.pages); try { await ref.update({toc: book.toc}); } catch(e){} }
@@ -737,6 +737,7 @@ function enterReader(page){
   artCache.forEach(a => a.url && URL.revokeObjectURL(a.url)); artCache.clear(); artQueue.length = 0;
   partArt.forEach(a => a.url && URL.revokeObjectURL(a.url)); partArt.clear(); activePart = null; castCache.clear();
   if (!book.parts) book.parts = [];
+  if (!book.looks) book.looks = {};
   book.parts.forEach(p => { if (p.img || p.svg) setPartArt(p.id, p.svg, p.img); });
   $('#library').hidden = true; $('#reader').hidden = false;
   $('#bTitle').textContent = book.title;
@@ -1155,11 +1156,12 @@ function enableAi(){
 }
 async function writeImagePrompt(t, allowNone){
   if (!textReady()) return templatePrompt(t);
+  await ensureLooks(t.text, t.page);
   const known = knownFor(t.text, t.page);
   const r = await callText(`Write a prompt for an AI image generator (such as ChatGPT images, Midjourney or Gemini) that illustrates ${t.kind === 'part' ? 'this passage' : 'the main moment on this page'} of the book "${book.title}".
 - 60 to 120 words, one paragraph, plain text, no labels or quote marks.
 - Describe what to see: the setting, who is there and what they look like, what they are doing, the lighting, the mood and the framing.
-- Describe characters by how they look, not only by name.
+- Describe each character exactly as their look below says. Never change their hair, eye or skin color, age, build or clothing.
 - Use only what the text shows. Nothing from later in the book, even if you recognize it.
 - End with exactly this style: ${settings.style || DEFAULT_STYLE}. No text or lettering in the image.${allowNone ? '\n- If the text has no scene to picture (title page, copyright, contents, acknowledgments, index), reply with exactly NONE.' : ''}
 ${known ? 'Known characters and places:\n' + known + '\n' : ''}
@@ -1173,11 +1175,13 @@ Reply with just the prompt.`, {modelTier: 'quick'});
   return txt || templatePrompt(t);
 }
 async function openaiPicture(t, allowNone){
+  await ensureLooks(t.text, t.page);
   let p = promptCache.get(t.key);
   if (!p) p = await writeImagePrompt(t, allowNone);
   if (p === 'NONE') return 'NONE';
   promptCache.set(t.key, p);
-  return await openaiImage(p);
+  const lk = looksBlock(t.text, t.page);
+  return await openaiImage(p.slice(0, 2600) + (lk ? '\n\nCHARACTER LOOKS. Draw each person exactly like this, matching every earlier picture:\n' + lk : ''));
 }
 const ART_RULES = `Rules:
 - Reply with only a single <svg> element. No markdown fences, no commentary.
@@ -1189,7 +1193,7 @@ const ART_RULES = `Rules:
 - Show only what the text describes. Never add anything from later in the book, even if you recognize the book.`;
 function knownFor(text, page){
   return visibleEntities().filter(en => en.firstPage <= page && (en.type === 'character' || en.type === 'place') && [en.name, ...en.aliases].some(n => n && text.includes(n))).slice(0, 8)
-    .map(en => `- ${en.name} (${en.type}): ${en.description || ''}`).join('\n');
+    .map(en => `- ${en.name} (${en.type}): ${en.type === 'character' && lookLine(en) ? 'LOOKS EXACTLY LIKE THIS, NEVER CHANGE IT: ' + lookLine(en) : (en.description || '')}`).join('\n');
 }
 let shown = null; // {url, svg, name}
 function showImg(entry, alt, name){
@@ -1261,11 +1265,12 @@ async function drawPart(part, force){
     return;
   }
   const pageText = (book.pages[part.page - 1] || []).join('\n\n');
+  await ensureLooks(part.text + '\n' + (book.pages[part.page - 1] || []).join('\n'), part.page);
   const known = knownFor(part.text, part.page);
   const prompt = `You are the illustrator for an illustrated e-reader. The reader picked a passage from page ${part.page} of the book "${book.title}" and wants a picture of exactly that moment.
 ${ART_RULES}
 - Focus tightly on the PASSAGE. Use the rest of the page only as background context.
-${known ? 'Characters and places involved, for a consistent look:\n' + known + '\n' : ''}
+${known ? 'Characters and places involved. Draw every character exactly as described here (same hair, eye and skin color, age, build and clothing in every picture):\n' + known + '\n' : ''}
 PAGE CONTEXT:
 """
 ${pageText.slice(0, 4000)}
@@ -1305,10 +1310,12 @@ function templatePrompt(t){
   const scene = t.text.replace(/\s+/g, ' ').trim();
   const cut = scene.length > 700 ? scene.slice(0, 700) + '…' : scene;
   const known = knownFor(t.text, t.page).split('\n').filter(Boolean).map(l => l.replace(/^- /, '')).join('; ');
-  return `Illustration of a scene from the novel "${book.title}": ${cut}${known ? '\n\nCharacters and places: ' + known : ''}\n\nStyle: ${settings.style || DEFAULT_STYLE}. No text or lettering in the image.`;
+  const lk = looksBlock(t.text, t.page);
+  return `Illustration of a scene from the novel "${book.title}": ${cut}${known ? '\n\nCharacters and places: ' + known : ''}${lk ? '\n\nCharacter looks (draw them exactly like this): ' + lk.replace(/\n/g, ' | ') : ''}\n\nStyle: ${settings.style || DEFAULT_STYLE}. No text or lettering in the image.`;
 }
 function promptDialog(){
   const t = currentTarget();
+  if (aiReady()) ensureLooks(t.text, t.page);
   const ov = $('#overlay'); hideSel();
   ov.innerHTML = `<div class="scrim" data-close></div><div class="modal" role="dialog" aria-modal="true" aria-labelledby="pmT">
     <b id="pmT">Image prompt for ${esc(t.label)}</b>
@@ -1505,11 +1512,12 @@ async function loadArt(job){
     } catch(e){ aiError(e); if (!aiBlocked && !budgetHit()) artCache.set(page, {status:'error', msg: e && e.message}); }
     return;
   }
+  await ensureLooks(text, page);
   const known = knownFor(text, page);
   const prompt = `You are the illustrator for an illustrated e-reader. Draw ONE illustration for this page of the book "${book.title}", showing the most important moment or setting on the page.
 ${ART_RULES}
 - If the page has no scene (title page, copyright, contents, acknowledgments, index), reply with exactly NONE.
-${known ? 'Characters and places on this page, for a consistent look:\n' + known + '\n' : ''}
+${known ? 'Characters and places on this page. Draw every character exactly as described here (same hair, eye and skin color, age, build and clothing in every picture):\n' + known + '\n' : ''}
 PAGE ${page}:
 """
 ${text.slice(0, 6000)}
@@ -1922,6 +1930,54 @@ $('#findBtn').onclick = () => {
   inp.addEventListener('keydown', e => { if (e.key === 'Enter' && /\?\s*$/.test(inp.value)){ e.preventDefault(); $('#fAsk').click(); } });
 };
 
+/* ---------- character looks: one fixed appearance per character, used in every picture ---------- */
+const lookBusy = new Map();
+const LOOK_KW = /\b(hair|haired|eyes?|eyed|beard|bearded|mustache|moustache|skin|skinned|tall|short|thin|slim|lean|stout|plump|broad|old|young|aged|elderly|wrinkl\w*|freckl\w*|scar\w*|face|faced|wore|wears|wearing|dressed|cloak|coat|dress|gown|robe|boots|hat|hood|glasses|spectacles|bald|braid\w*|curl\w*|grey|gray|white|silver|blond|blonde|red|auburn|dark|black|brown|pale|tanned|muscul\w*|limp\w*|tattoo\w*|uniform|armou?r|jewel\w*|earring\w*)\b/i;
+function charsIn(text, page){
+  return book.entities.filter(en => en.type === 'character' && en.firstPage <= page && [en.name, ...en.aliases].some(n => n && n.length >= 3 && text.includes(n))).slice(0, 6);
+}
+function lookLine(en){ const lk = book.looks && book.looks[en.name]; return lk && lk.text ? lk.text : ''; }
+function looksBlock(text, page){
+  return charsIn(text, page).map(en => lookLine(en) ? `${en.name}: ${lookLine(en)}` : '').filter(Boolean).join('\n');
+}
+const saveLooks = debounce(async () => { if (db && book) try { await bref().update({looks: book.looks}); } catch(e){} }, 600);
+async function buildLook(en, page, force){
+  if (!force && book.looks[en.name]) return book.looks[en.name];
+  if (lookBusy.has(en.name)) return lookBusy.get(en.name);
+  const job = (async () => {
+    if (!aiReady()) return null;
+    const names = [en.name, ...en.aliases].filter(n => n && n.length >= 3);
+    const withKw = [], plain = [];
+    for (let pg = 1; pg <= page; pg++){
+      (book.pages[pg - 1] || []).forEach(t => { if (!names.some(n => t.includes(n))) return; (LOOK_KW.test(t) ? withKw : plain).push(`[p. ${pg}] ${t.slice(0, 600)}`); });
+      if (withKw.length >= 14) break;
+    }
+    const excerpts = withKw.slice(0, 14).concat(plain.slice(0, 4)).join('\n\n').slice(0, 9000);
+    const prev = !force ? '' : (book.looks[en.name] && book.looks[en.name].text) || '';
+    const r = await sample(`Write a fixed visual description of the character ${en.name} from the book "${book.title}" for an illustrator, so they look identical in every picture.
+- Use every physical detail the excerpts state, exactly: hair color and style, eye color, skin tone, age, build, height, facial hair, scars or marks, and usual clothing.
+- For anything not stated, choose ONE specific, ordinary detail that fits the story's setting and commit to it (for example "short dark-brown hair", not "hair of some color").${prev ? '\n- Keep everything from the PREVIOUS LOOK that the excerpts don\'t contradict.' : ''}
+- Never contradict the text. Use only these excerpts and notes, never outside knowledge of the book.
+- 35 to 60 words, one line, most distinctive traits first. No name at the start, no story events.
+${en.description ? 'NOTE: ' + en.description + '\n' : ''}${prev ? 'PREVIOUS LOOK: ' + prev + '\n' : ''}
+EXCERPTS:
+${excerpts || '(no descriptions yet)'}
+
+Reply with just the description.`, {modelTier: 'quick'});
+    const text = String((r && r.text) || '').trim().replace(/^["“]|["”]$/g, '');
+    if (!text) return null;
+    book.looks[en.name] = {text, page, at: Date.now()};
+    saveLooks();
+    return book.looks[en.name];
+  })().catch(e => { aiError(e); return null; }).finally(() => lookBusy.delete(en.name));
+  lookBusy.set(en.name, job);
+  return job;
+}
+async function ensureLooks(text, page){
+  const need = charsIn(text, page).filter(en => !book.looks[en.name]);
+  if (need.length) await Promise.all(need.map(en => buildLook(en, page)));
+}
+
 /* Memory card */
 const recapCache = new Map();
 function openCard(id){
@@ -1937,6 +1993,7 @@ function openCard(id){
     <div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">So far</h3><div class="facts">${facts.map(f => `<div class="fact"><button data-pg="${f.page}" aria-label="Go to page ${f.page}">p. ${f.page}</button><span>${esc(f.text)}</span></div>`).join('') || '<span class="muted">No notes yet.</span>'}</div></div>
     ${facts.length >= 3 && aiReady() ? `<div style="display:flex;flex-direction:column;gap:8px"><button class="btn" id="recapBtn" style="align-self:flex-start">Catch me up</button><p class="desc" id="recapT" hidden></p></div>` : ''}
     ${settings.castOn && en.type === 'character' && 'speechSynthesis' in window ? `<div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">Voice</h3><div class="seg" style="flex-wrap:wrap"><select id="cvSel" aria-label="Voice for ${esc(en.name)}" style="height:44px;border:1px solid var(--line);border-radius:10px;padding:0 8px;max-width:100%">${englishVoices().map(v => `<option value="${esc(v.voiceURI)}">${esc(v.name.replace(/^Microsoft /, '').replace(/ - .*$/, ''))}</option>`).join('')}</select><select id="cvPitch" aria-label="Pitch" style="height:44px;border:1px solid var(--line);border-radius:10px;padding:0 8px"><option value="0.8">Lower</option><option value="1">Normal</option><option value="1.2">Higher</option></select><button class="btn small" id="cvPlay">${svgI('speak').replace('<svg', '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"')}Hear it</button></div></div>` : ''}
+    ${en.type === 'character' ? `<div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">Look in pictures</h3><textarea id="lookTx" class="search" style="height:auto;min-height:96px;padding:10px 12px;line-height:1.45;resize:vertical" aria-label="How ${esc(en.name)} looks in pictures" placeholder="Made from the book the first time ${esc(en.name)} is drawn.">${esc(lookLine(en))}</textarea><div class="seg" style="flex-wrap:wrap"><button class="btn small" id="lookSave">Save look</button>${aiReady() ? `<button class="btn small" id="lookRe">${lookLine(en) ? 'Re-read from book' : 'Create now'}</button>` : ''}</div><div class="muted" style="font-size:13px">Every picture uses this, so ${esc(en.name)} always looks the same. Edit it if the story changes their look, or to fix anything.</div></div>` : ''}
     <p class="muted" style="font-size:13px;margin:0">More unlocks as you keep reading.</p>`);
   if ($('#cvSel')){
     const cur = voiceFor(en.name); const sel = $('#cvSel'), pit = $('#cvPitch');
@@ -1947,6 +2004,10 @@ function openCard(id){
     $('#cvPlay').onclick = () => { stopTts(); const u = new SpeechSynthesisUtterance(`Hello. I'm ${en.name}.`); const v = speechSynthesis.getVoices().find(x => x.voiceURI === sel.value); if (v) u.voice = v; u.pitch = Number(pit.value); u.rate = settings.rate; speechSynthesis.speak(u); };
   }
   body.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { closeOverlay(); goPage(+b.dataset.pg); });
+  if ($('#lookSave')){
+    $('#lookSave').onclick = () => { const v = $('#lookTx').value.trim(); if (v){ book.looks[en.name] = {text: v, page: P, edited: true, at: Date.now()}; } else delete book.looks[en.name]; saveLooks(); promptCache.clear(); toast('Look saved. New pictures will use it.'); };
+    const re = $('#lookRe'); if (re) re.onclick = async () => { re.disabled = true; re.textContent = 'Reading…'; const lk = await buildLook(en, P, !!lookLine(en)); if ($('#lookTx')){ $('#lookTx').value = lk ? lk.text : $('#lookTx').value; re.disabled = false; re.textContent = 'Re-read from book'; } promptCache.clear(); };
+  }
   const rb = $('#recapBtn');
   if (rb) rb.onclick = async () => {
     const key = en.id + ':' + facts.length, out = $('#recapT');
