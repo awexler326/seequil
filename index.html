@@ -251,7 +251,7 @@ const svgI = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`
 let db = null, uid = null, downloads = null;
 let activePart = null; const partArt = new Map();
 const DEFAULT_STYLE = 'painterly digital illustration, soft atmospheric light, cohesive muted palette, composition framed to fill the whole image';
-let settings = {ai:false, fs:19, rate:1, voice:'', style: DEFAULT_STYLE, picSource:'openai', picQuality:'low', picMode:'tap', imgFit:'contain', picGen:true, castOn:true, portraits:false, refCost:0.006, portraitScope:'main', mainCount:4, textProvider:'openai', oaKey:'', anKey:'', budget:3, spend:{},
+let settings = {ai:false, fs:19, rate:1, voice:'', style: DEFAULT_STYLE, picSource:'openai', picQuality:'low', picMode:'tap', imgFit:'contain', picGen:true, castOn:true, portraits:false, refCost:0.006, portraitScope:'main', mainCount:4, refPlaces:false, refThings:false, mainPlaces:3, mainThings:3, textProvider:'openai', oaKey:'', anKey:'', budget:3, spend:{},
   oaText:'gpt-6-luna', oaImage:'gpt-image-2.5-flare', anModel:'claude-sonnet-5-5', anQuick:'claude-haiku-5-5', costLow:0.007, costMed:0.014, oaIn:0.1, oaOut:0.5, anIn:3, anOut:15};
 let book = null, P = 1;
 let aiBlocked = false, backoffUntil = 0;
@@ -1028,6 +1028,10 @@ $('#setBtn').onclick = () => {
     <div class="field"><label for="porScope">Who gets portraits</label><select id="porScope"><option value="main"${settings.portraitScope !== 'all' ? ' selected' : ''}>Main characters only</option><option value="all"${settings.portraitScope === 'all' ? ' selected' : ''}>Everyone who appears in a picture</option></select>
       <div class="seg" style="align-items:center"><label for="mainCnt" style="font-size:14px">How many main characters</label><input class="search" type="number" min="1" max="12" step="1" id="mainCnt" value="${esc(settings.mainCount || 4)}" style="width:80px"></div>
       <div class="muted" style="font-size:14px">Main characters are the ones mentioned most in what you’ve read so far. Set any character to Always or Never on their memory card.</div></div>
+    <div class="field"><label>Also make reference pictures for</label>
+      <div class="seg" style="align-items:center;flex-wrap:wrap"><label class="switch" style="font-size:15px"><input type="checkbox" id="refPl"${settings.refPlaces ? ' checked' : ''}> Key places</label><label for="mainPl" class="muted" style="font-size:13px">how many</label><input class="search" type="number" min="1" max="12" id="mainPl" value="${esc(settings.mainPlaces || 3)}" style="width:72px"></div>
+      <div class="seg" style="align-items:center;flex-wrap:wrap"><label class="switch" style="font-size:15px"><input type="checkbox" id="refTh"${settings.refThings ? ' checked' : ''}> Key items</label><label for="mainTh" class="muted" style="font-size:13px">how many</label><input class="search" type="number" min="1" max="12" id="mainTh" value="${esc(settings.mainThings || 3)}" style="width:72px"></div>
+      <div class="muted" style="font-size:14px">The most-mentioned places and items get a written look and a reference picture, so they stay the same in every picture. A picture uses at most 3 characters and 2 places or items as guides. Set any of them to Always or Never on their memory card.</div></div>
     <div class="field"><label for="picQ">ChatGPT picture quality</label><select id="picQ">
       <option value="low"${sel('low', settings.picQuality)}>Low (about $${Number(settings.costLow).toFixed(3)} each)</option>
       <option value="medium"${sel('medium', settings.picQuality)}>Medium (about $${Number(settings.costMed).toFixed(3)} each)</option></select></div>
@@ -1057,6 +1061,10 @@ $('#setBtn').onclick = () => {
   const bind = (id, key, conv) => { const el = $('#' + id); if (el) el.onchange = e => { settings[key] = conv ? conv(e.target.value) : e.target.value.trim(); if (/Key$/.test(key)){ aiBlocked = false; lastKeyMsg = ''; } saveSettings(); renderScene(); if (book){ requestArt(P, true, true); ensureCodex(); } }; };
   const n = v => Math.max(0, Number(v) || 0);
   bind('picSrc', 'picSource');
+  $('#refPl').onchange = e => { settings.refPlaces = e.target.checked; saveSettings(); };
+  $('#refTh').onchange = e => { settings.refThings = e.target.checked; saveSettings(); };
+  const clampN = (el, key) => { settings[key] = Math.max(1, Math.min(12, Math.round(Number(el.value) || 3))); el.value = settings[key]; saveSettings(); };
+  $('#mainPl').onchange = e => clampN(e.target, 'mainPlaces'); $('#mainTh').onchange = e => clampN(e.target, 'mainThings');
   $('#porScope').onchange = e => { settings.portraitScope = e.target.value; saveSettings(); };
   $('#mainCnt').onchange = e => { settings.mainCount = Math.max(1, Math.min(12, Math.round(Number(e.target.value) || 4))); e.target.value = settings.mainCount; saveSettings(); };
   $('#portTog').onchange = e => { settings.portraits = e.target.checked; saveSettings(); toast(settings.portraits ? 'Portraits on. New pictures will use them.' : 'Portraits off. Pictures use the written looks.'); }; bind('picMode', 'picMode');
@@ -1211,7 +1219,7 @@ async function openaiPicture(t, allowNone){
   promptCache.set(t.key, p);
   const lk = looksBlock(t.text, t.page);
   const refs = await portraitRefs(t.text, t.page);
-  const refNote = refs.length ? '\n\nREFERENCE IMAGES: ' + refs.map((x, i) => `image ${i + 1} is ${x.name}`).join('; ') + '. Keep each person\'s face, hair, build and clothing exactly as in their reference image. Only the pose, expression and scene change.' : '';
+  const refNote = refs.length ? '\n\nREFERENCE IMAGES: ' + refs.map((x, i) => `image ${i + 1} is ${x.name}${x.type && x.type !== 'character' ? ' (' + x.type + ')' : ''}`).join('; ') + '. Keep each person\'s face, hair, build and clothing, and each place or object, exactly as in its reference image. Only the pose, expression, camera angle and scene change.' : '';
   return await openaiImage(p.slice(0, 2400) + (lk ? '\n\nCHARACTER LOOKS. Draw each person exactly like this, matching every earlier picture:\n' + lk : '') + refNote, null, refs);
 }
 const ART_RULES = `Rules:
@@ -1224,7 +1232,7 @@ const ART_RULES = `Rules:
 - Show only what the text describes. Never add anything from later in the book, even if you recognize the book.`;
 function knownFor(text, page){
   return visibleEntities().filter(en => en.firstPage <= page && (en.type === 'character' || en.type === 'place') && [en.name, ...en.aliases].some(n => n && text.includes(n))).slice(0, 8)
-    .map(en => `- ${en.name} (${en.type}): ${en.type === 'character' && lookLine(en) ? 'LOOKS EXACTLY LIKE THIS, NEVER CHANGE IT: ' + lookLine(en) : (en.description || '')}`).join('\n');
+    .map(en => `- ${en.name} (${en.type}): ${lookLine(en) ? 'LOOKS EXACTLY LIKE THIS, NEVER CHANGE IT: ' + lookLine(en) : (en.description || '')}`).join('\n');
 }
 let shown = null; // {url, svg, name}
 function showImg(entry, alt, name){
@@ -1307,14 +1315,14 @@ async function redrawWithChanges(part, change, mode, base){
       const lookPart = lk ? '\n\nCHARACTER LOOKS. Draw each person exactly like this:\n' + lk : '';
       if (mode === 'edit' && (base.img || base.svg)){
         const cur = base.img || await blobToDataUrl(await svgToPng(base.svg));
-        const refNote = refs.length ? '\n\nThe other images are character references: ' + refs.map((x, i) => `image ${i + 2} is ${x.name}`).join('; ') + '. Keep each person looking like their reference.' : '';
+        const refNote = refs.length ? '\n\nThe other images are references: ' + refs.map((x, i) => `image ${i + 2} is ${x.name}${x.type && x.type !== 'character' ? ' (' + x.type + ')' : ''}`).join('; ') + '. Keep each person, place and object looking like its reference.' : '';
         out = await openaiImage(`Edit the first image, an illustration from the book "${book.title}". Make ONLY these changes: ${change}
 Keep everything else the same: the composition, setting, lighting, art style and every character's appearance.${lookPart}${refNote}`, null, [{name: 'current picture', img: cur}, ...refs]);
       } else {
         const key = part ? part.id : 'p' + page;
         let scene = promptCache.get(key); if (!scene || scene === 'NONE') scene = await writeImagePrompt({kind: part ? 'part' : 'page', part, key, text, page}, false);
         if (scene === 'NONE') scene = text.slice(0, 1200);
-        const refNote = refs.length ? '\n\nREFERENCE IMAGES: ' + refs.map((x, i) => `image ${i + 1} is ${x.name}`).join('; ') + '. Keep each person\'s face, hair, build and clothing exactly as in their reference image.' : '';
+        const refNote = refs.length ? '\n\nREFERENCE IMAGES: ' + refs.map((x, i) => `image ${i + 1} is ${x.name}${x.type && x.type !== 'character' ? ' (' + x.type + ')' : ''}`).join('; ') + '. Keep each person\'s face, hair, build and clothing, and each place or object, exactly as in its reference image.' : '';
         out = await openaiImage(String(scene).slice(0, 2200) + `\n\nTHE READER ASKED FOR THESE CHANGES, follow them exactly: ${change}` + lookPart + refNote, null, refs);
       }
     } else {
@@ -2053,12 +2061,17 @@ $('#findBtn').onclick = () => {
 /* ---------- character looks: one fixed appearance per character, used in every picture ---------- */
 const lookBusy = new Map();
 const LOOK_KW = /\b(hair|haired|eyes?|eyed|beard|bearded|mustache|moustache|skin|skinned|tall|short|thin|slim|lean|stout|plump|broad|old|young|aged|elderly|wrinkl\w*|freckl\w*|scar\w*|face|faced|wore|wears|wearing|dressed|cloak|coat|dress|gown|robe|boots|hat|hood|glasses|spectacles|bald|braid\w*|curl\w*|grey|gray|white|silver|blond|blonde|red|auburn|dark|black|brown|pale|tanned|muscul\w*|limp\w*|tattoo\w*|uniform|armou?r|jewel\w*|earring\w*)\b/i;
+const KIND = {character: {ref: 'Portrait', key: 'main character'}, place: {ref: 'Reference picture', key: 'key place'}, thing: {ref: 'Reference picture', key: 'key item'}};
+function refTypes(){ return ['character', ...(settings.refPlaces ? ['place'] : []), ...(settings.refThings ? ['thing'] : [])]; }
+function refAllowed(en){ return !!settings.portraits && refTypes().includes(en.type); }
+function entsIn(text, page, types){ return book.entities.filter(en => types.includes(en.type) && en.firstPage <= page && [en.name, ...en.aliases].some(n => n && n.length >= 3 && text.includes(n))); }
+function keyExtrasIn(text, page){ const t = refTypes().filter(x => x !== 'character'); return t.length ? entsIn(text, page, t).filter(en => isMain(en)).slice(0, 2) : []; }
 function charsIn(text, page){
   return book.entities.filter(en => en.type === 'character' && en.firstPage <= page && [en.name, ...en.aliases].some(n => n && n.length >= 3 && text.includes(n))).slice(0, 6);
 }
 function lookLine(en){ const lk = book.looks && book.looks[en.name]; return lk && lk.text ? lk.text : ''; }
 function looksBlock(text, page){
-  return charsIn(text, page).map(en => lookLine(en) ? `${en.name}: ${lookLine(en)}` : '').filter(Boolean).join('\n');
+  return [...charsIn(text, page), ...keyExtrasIn(text, page)].map(en => lookLine(en) ? `${en.name}${en.type !== 'character' ? ' (' + en.type + ')' : ''}: ${lookLine(en)}` : '').filter(Boolean).join('\n');
 }
 const saveLooks = debounce(async () => { if (db && book) try { await bref().update({looks: book.looks}); } catch(e){} }, 600);
 async function buildLook(en, page, force){
@@ -2069,14 +2082,16 @@ async function buildLook(en, page, force){
     const names = [en.name, ...en.aliases].filter(n => n && n.length >= 3);
     const withKw = [], plain = [];
     for (let pg = 1; pg <= page; pg++){
-      (book.pages[pg - 1] || []).forEach(t => { if (!names.some(n => t.includes(n))) return; (LOOK_KW.test(t) ? withKw : plain).push(`[p. ${pg}] ${t.slice(0, 600)}`); });
+      (book.pages[pg - 1] || []).forEach(t => { if (!names.some(n => t.includes(n))) return; ((en.type !== 'character' || LOOK_KW.test(t)) ? withKw : plain).push(`[p. ${pg}] ${t.slice(0, 600)}`); });
       if (withKw.length >= 14) break;
     }
     const excerpts = withKw.slice(0, 14).concat(plain.slice(0, 4)).join('\n\n').slice(0, 9000);
     const prev = !force ? '' : (book.looks[en.name] && book.looks[en.name].text) || '';
-    const r = await sample(`Write a fixed visual description of the character ${en.name} from the book "${book.title}" for an illustrator, so they look identical in every picture.
-- Use every physical detail the excerpts state, exactly: hair color and style, eye color, skin tone, age, build, height, facial hair, scars or marks, and usual clothing.
-- For anything not stated, choose ONE specific, ordinary detail that fits the story's setting and commit to it (for example "short dark-brown hair", not "hair of some color").${prev ? '\n- Keep everything from the PREVIOUS LOOK that the excerpts don\'t contradict.' : ''}
+    const what = en.type === 'place' ? `the place ${en.name}` : en.type === 'thing' ? `the object ${en.name}` : `the character ${en.name}`;
+    const details = en.type === 'place' ? 'its size, shape, buildings or landscape, materials, colors, age and condition, and surroundings' : en.type === 'thing' ? 'its size, shape, material, colors, markings, age and condition' : 'hair color and style, eye color, skin tone, age, build, height, facial hair, scars or marks, and usual clothing';
+    const r = await sample(`Write a fixed visual description of ${what} from the book "${book.title}" for an illustrator, so it looks identical in every picture.
+- Use every physical detail the excerpts state, exactly: ${details}.
+- For anything not stated, choose ONE specific, ordinary detail that fits the story's setting and commit to it (for example "short dark-brown hair" or "grey slate roof", not "some color").${prev ? '\n- Keep everything from the PREVIOUS LOOK that the excerpts don\'t contradict.' : ''}
 - Never contradict the text. Use only these excerpts and notes, never outside knowledge of the book.
 - 35 to 60 words, one line, most distinctive traits first. No name at the start, no story events.
 ${en.description ? 'NOTE: ' + en.description + '\n' : ''}${prev ? 'PREVIOUS LOOK: ' + prev + '\n' : ''}
@@ -2094,7 +2109,7 @@ Reply with just the description.`, {modelTier: 'quick'});
   return job;
 }
 async function ensureLooks(text, page){
-  const need = charsIn(text, page).filter(en => !book.looks[en.name]);
+  const need = [...charsIn(text, page), ...keyExtrasIn(text, page)].filter(en => !book.looks[en.name]);
   if (need.length) await Promise.all(need.map(en => buildLook(en, page)));
 }
 
@@ -2113,8 +2128,12 @@ async function makePortrait(en, page, force){
   const job = (async () => {
     await buildLook(en, page);
     const look = lookLine(en) || en.description || '';
-    const img = await openaiImage(`Character reference portrait for an illustrated novel. ${en.name}: ${look}
-Three-quarter view from the knees up, relaxed neutral pose, face clearly visible, plain soft light-grey background, even lighting. Style: ${settings.style || DEFAULT_STYLE}. No text, letters or logos.`, '1024x1536');
+    const style = `Style: ${settings.style || DEFAULT_STYLE}. No text, letters or logos.`;
+    const img = en.type === 'place'
+      ? await openaiImage(`Reference image of a location for an illustrated novel. ${en.name}: ${look}\nWide establishing view with no people, the place's key features clearly visible, soft even light. ${style}`, '1536x1024')
+      : en.type === 'thing'
+      ? await openaiImage(`Reference image of an object for an illustrated novel. ${en.name}: ${look}\nThe object alone, centered on a plain soft light-grey background, clearly lit, showing its shape, material and details. ${style}`, '1024x1024')
+      : await openaiImage(`Character reference portrait for an illustrated novel. ${en.name}: ${look}\nThree-quarter view from the knees up, relaxed neutral pose, face clearly visible, plain soft light-grey background, even lighting. ${style}`, '1024x1536');
     await savePortrait(en.name, img);
     return img;
   })().finally(() => portraitBusy.delete(en.name));
@@ -2124,7 +2143,7 @@ Three-quarter view from the knees up, relaxed neutral pose, face clearly visible
 let mainCache = {bid: null, upTo: 0, counts: null};
 function mentionCounts(){
   if (mainCache.bid !== book.id || Math.abs(mainCache.upTo - P) > 5 || !mainCache.counts){
-    const chars = book.entities.filter(en => en.type === 'character' && en.firstPage <= P);
+    const chars = book.entities.filter(en => ['character', 'place', 'thing'].includes(en.type) && en.firstPage <= P);
     const counts = new Map(chars.map(en => [en.name, 0]));
     for (let pg = 1; pg <= P; pg++) (book.pages[pg - 1] || []).forEach(t => { for (const en of chars){ if ([en.name, ...en.aliases].some(n => n && n.length >= 3 && t.includes(n))) counts.set(en.name, counts.get(en.name) + 1); } });
     mainCache = {bid: book.id, upTo: P, counts};
@@ -2132,7 +2151,7 @@ function mentionCounts(){
   return mainCache.counts;
 }
 function mainRank(en){
-  const c = mentionCounts(); const sorted = [...c.entries()].filter(([n]) => (book.mainOverride || {})[n] !== 'no').sort((a, b) => b[1] - a[1]);
+  const c = mentionCounts(); const sorted = book.entities.filter(x => x.type === en.type && c.has(x.name) && (book.mainOverride || {})[x.name] !== 'no').map(x => [x.name, c.get(x.name)]).sort((a, b) => b[1] - a[1]);
   const i = sorted.findIndex(([n]) => n === en.name);
   return {rank: i, mentions: c.get(en.name) || 0};
 }
@@ -2141,15 +2160,17 @@ function isMain(en){
   if (o === 'yes') return true;
   if (o === 'no') return false;
   const {rank, mentions} = mainRank(en);
-  return rank >= 0 && rank < Math.max(1, Number(settings.mainCount) || 4) && mentions >= 3;
+  const limit = en.type === 'place' ? settings.mainPlaces : en.type === 'thing' ? settings.mainThings : settings.mainCount;
+  return rank >= 0 && rank < Math.max(1, Number(limit) || 3) && mentions >= (en.type === 'character' ? 3 : 2);
 }
 const saveMain = debounce(async () => { if (db && book) try { await bref().update({mainOverride: book.mainOverride}); } catch(e){} }, 500);
 async function portraitRefs(text, page){
   if (!settings.portraits || settings.picSource !== 'openai' || /^dall-e/i.test(settings.oaImage)) return [];
   const refs = [];
   const who = charsIn(text, page).filter(en => settings.portraitScope === 'all' ? (book.mainOverride || {})[en.name] !== 'no' : isMain(en));
-  for (const en of who.slice(0, 3)){
-    try { const img = await makePortrait(en, page); if (img) refs.push({name: en.name, img}); }
+  const extras = refTypes().filter(x => x !== 'character').length ? entsIn(text, page, refTypes().filter(x => x !== 'character')).filter(en => (book.mainOverride || {})[en.name] === 'yes' || ((book.mainOverride || {})[en.name] !== 'no' && isMain(en))).slice(0, 2) : [];
+  for (const en of [...who.slice(0, 3), ...extras]){
+    try { const img = await makePortrait(en, page); if (img) refs.push({name: en.name, img, type: en.type}); }
     catch(e){ if (e && /^(budget|bad_key|no_credit)$/.test(e.code)) throw e; }
   }
   return refs;
@@ -2170,8 +2191,8 @@ function openCard(id){
     <div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">So far</h3><div class="facts">${facts.map(f => `<div class="fact"><button data-pg="${f.page}" aria-label="Go to page ${f.page}">p. ${f.page}</button><span>${esc(f.text)}</span></div>`).join('') || '<span class="muted">No notes yet.</span>'}</div></div>
     ${facts.length >= 3 && aiReady() ? `<div style="display:flex;flex-direction:column;gap:8px"><button class="btn" id="recapBtn" style="align-self:flex-start">Catch me up</button><p class="desc" id="recapT" hidden></p></div>` : ''}
     ${settings.castOn && en.type === 'character' && 'speechSynthesis' in window ? `<div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">Voice</h3><div class="seg" style="flex-wrap:wrap"><select id="cvSel" aria-label="Voice for ${esc(en.name)}" style="height:44px;border:1px solid var(--line);border-radius:10px;padding:0 8px;max-width:100%">${englishVoices().map(v => `<option value="${esc(v.voiceURI)}">${esc(v.name.replace(/^Microsoft /, '').replace(/ - .*$/, ''))}</option>`).join('')}</select><select id="cvPitch" aria-label="Pitch" style="height:44px;border:1px solid var(--line);border-radius:10px;padding:0 8px"><option value="0.8">Lower</option><option value="1">Normal</option><option value="1.2">Higher</option></select><button class="btn small" id="cvPlay">${svgI('speak').replace('<svg', '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"')}Hear it</button></div></div>` : ''}
-    ${en.type === 'character' && settings.portraits ? `<div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">Portrait</h3>${book.portraits[en.name] ? `<img src="${book.portraits[en.name]}" alt="Portrait of ${esc(en.name)}" style="width:160px;border-radius:12px;border:1px solid var(--line)">` : `<div class="muted" style="font-size:14px">No portrait yet. One is drawn the first time ${esc(en.name)} appears in a ChatGPT picture.</div>`}<div class="seg" style="flex-wrap:wrap">${settings.oaKey ? `<button class="btn small" id="porDraw">${book.portraits[en.name] ? 'Redraw portrait' : 'Draw portrait now'}</button>` : ''}<button class="btn small" id="porUp">Upload my own</button>${book.portraits[en.name] ? '<button class="btn small" id="porDel">Remove</button>' : ''}</div><div class="seg" style="align-items:center;flex-wrap:wrap"><label for="porWho" style="font-size:14px">Portrait for ${esc(en.name)}:</label><select id="porWho" style="height:40px;border:1px solid var(--line);border-radius:10px;padding:0 8px"><option value="">Automatic (${isMain(en) && !(book.mainOverride || {})[en.name] ? 'main character, yes' : ((book.mainOverride || {})[en.name] ? 'main character' : 'not a main character yet')})</option><option value="yes"${(book.mainOverride || {})[en.name] === 'yes' ? ' selected' : ''}>Always</option><option value="no"${(book.mainOverride || {})[en.name] === 'no' ? ' selected' : ''}>Never</option></select></div><div class="muted" style="font-size:13px">${settings.portraitScope === 'all' || isMain(en) ? `Pictures with ${esc(en.name)} are guided by this portrait.` : `${esc(en.name)} isn’t a main character, so pictures use the written look below.`}</div></div>` : ''}
-    ${en.type === 'character' ? `<div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">Look in pictures</h3><textarea id="lookTx" class="search" style="height:auto;min-height:96px;padding:10px 12px;line-height:1.45;resize:vertical" aria-label="How ${esc(en.name)} looks in pictures" placeholder="Made from the book the first time ${esc(en.name)} is drawn.">${esc(lookLine(en))}</textarea><div class="seg" style="flex-wrap:wrap"><button class="btn small" id="lookSave">Save look</button>${aiReady() ? `<button class="btn small" id="lookRe">${lookLine(en) ? 'Re-read from book' : 'Create now'}</button>` : ''}</div><div class="muted" style="font-size:13px">Every picture uses this, so ${esc(en.name)} always looks the same. Edit it if the story changes their look, or to fix anything.</div></div>` : ''}
+    ${refAllowed(en) ? `<div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">${KIND[en.type].ref}</h3>${book.portraits[en.name] ? `<img src="${book.portraits[en.name]}" alt="${KIND[en.type].ref} of ${esc(en.name)}" style="width:160px;border-radius:12px;border:1px solid var(--line)">` : `<div class="muted" style="font-size:14px">No ${KIND[en.type].ref.toLowerCase()} yet. One is drawn the first time ${esc(en.name)} appears in a ChatGPT picture.</div>`}<div class="seg" style="flex-wrap:wrap">${settings.oaKey ? `<button class="btn small" id="porDraw">${book.portraits[en.name] ? 'Redraw' : 'Draw it now'}</button>` : ''}<button class="btn small" id="porUp">Upload my own</button>${book.portraits[en.name] ? '<button class="btn small" id="porDel">Remove</button>' : ''}</div><div class="seg" style="align-items:center;flex-wrap:wrap"><label for="porWho" style="font-size:14px">Use it for ${esc(en.name)}:</label><select id="porWho" style="height:40px;border:1px solid var(--line);border-radius:10px;padding:0 8px"><option value="">Automatic (${isMain(en) && !(book.mainOverride || {})[en.name] ? KIND[en.type].key + ', yes' : ((book.mainOverride || {})[en.name] ? KIND[en.type].key : 'not a ' + KIND[en.type].key + ' yet')})</option><option value="yes"${(book.mainOverride || {})[en.name] === 'yes' ? ' selected' : ''}>Always</option><option value="no"${(book.mainOverride || {})[en.name] === 'no' ? ' selected' : ''}>Never</option></select></div><div class="muted" style="font-size:13px">${(en.type === 'character' && settings.portraitScope === 'all') || isMain(en) ? `Pictures with ${esc(en.name)} are guided by this.` : `${esc(en.name)} isn’t a ${KIND[en.type].key}, so pictures use the written look below.`}</div></div>` : ''}
+    ${KIND[en.type] ? `<div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">Look in pictures</h3><textarea id="lookTx" class="search" style="height:auto;min-height:96px;padding:10px 12px;line-height:1.45;resize:vertical" aria-label="How ${esc(en.name)} looks in pictures" placeholder="Made from the book the first time ${esc(en.name)} is drawn.">${esc(lookLine(en))}</textarea><div class="seg" style="flex-wrap:wrap"><button class="btn small" id="lookSave">Save look</button>${aiReady() ? `<button class="btn small" id="lookRe">${lookLine(en) ? 'Re-read from book' : 'Create now'}</button>` : ''}</div><div class="muted" style="font-size:13px">${en.type === 'character' ? `Every picture uses this, so ${esc(en.name)} always looks the same. Edit it if the story changes their look, or to fix anything.` : `Pictures use this when ${esc(en.name)} is a ${KIND[en.type].key}${refAllowed(en) ? '' : ' (turn on Key ' + (en.type === 'place' ? 'places' : 'items') + ' under Character portraits in Settings)'}, so it looks the same every time.`}</div></div>` : ''}
     <p class="muted" style="font-size:13px;margin:0">More unlocks as you keep reading.</p>`);
   if ($('#cvSel')){
     const cur = voiceFor(en.name); const sel = $('#cvSel'), pit = $('#cvPitch');

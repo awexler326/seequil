@@ -57,6 +57,8 @@ Every picture also has redraw, **change this picture** (type what should be diff
 
 **Character portraits** (switch in Settings, off by default): Seequil draws each main character once and sends that portrait as a guide with every ChatGPT picture they're in, so faces stay consistent. A portrait costs about 1¢ once. Each picture costs about 0.6¢ more per character shown. By default only the main characters (the 4 mentioned most so far) get portraits; change the number in Settings, or set any character to Always or Never on their memory card, where you can also redraw, upload or remove their portrait. With the switch off, pictures use each character's written look.
 
+**Key places and items** (switches under Character portraits): the most-mentioned places and items (3 of each by default) also get a written look and a reference picture: a wide view for a place, the object on its own for an item. A picture uses at most 3 characters and 2 places or items as guides. Set any of them to Always or Never on their memory card.
+
 **Memory and prompts use:** OpenAI (cheapest) or Claude.
 
 ## 6. Full cast (character voices)
