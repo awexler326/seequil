@@ -392,6 +392,7 @@ async function openaiImage(prompt, sizeOverride, refs){
       settings.refBlocked = true; saveSettings();
       return openaiImage(prompt, sizeOverride, []);
     }
+    try { const t = await fetch('https://api.openai.com/v1/models', {headers: {'Authorization': 'Bearer ' + settings.oaKey}}); if (t.status === 401 || t.status === 403) throw apiErr('openai', 401, {}); } catch(x){ if (x && x.code) throw x; }
     throw {code: 'api', message: navigator.onLine === false ? 'You seem to be offline.' : 'This browser couldn’t reach OpenAI. Usually an ad or privacy blocker, or a work or school network blocking AI sites. Settings has a Test connection button.'};
   }
   const j = await r.json().catch(() => ({}));
@@ -421,12 +422,14 @@ async function testConnection(out){
   const lines = [];
   const show = () => { out.innerHTML = lines.map(l => `<div>${l}</div>`).join(''); };
   if (navigator.onLine === false){ out.textContent = 'Your device says it’s offline. Check your Wi-Fi or internet connection.'; return; }
+  let keyOk = {};
   const check = async (name, url, headers) => {
     lines.push(`${esc(name)}: checking…`); show(); const i = lines.length - 1;
     try {
       const r = await fetch(url, {headers});
       const j = await r.json().catch(() => ({}));
       const m = (j && j.error && (j.error.message || j.error.type)) || '';
+      keyOk[name] = r.ok;
       lines[i] = r.ok ? `<b>${esc(name)}: connected, and your key works.</b>`
         : (r.status === 401 || r.status === 403) ? `<b>${esc(name)}: reached, but it rejected your key.</b> Copy the key again with no spaces, or make a new one.`
         : `<b>${esc(name)}: reached, but it answered with an error (${r.status}).</b> ${esc(m)}`;
@@ -437,7 +440,8 @@ async function testConnection(out){
   };
   if (!settings.oaKey && !settings.anKey){ out.textContent = 'Add an API key first.'; return; }
   if (settings.oaKey) await check('OpenAI', 'https://api.openai.com/v1/models', {'Authorization': 'Bearer ' + settings.oaKey});
-  if (settings.oaKey){
+  if (settings.oaKey && !keyOk.OpenAI){ lines.push('OpenAI pictures with portraits: not checked until your OpenAI key works.'); show(); }
+  if (settings.oaKey && keyOk.OpenAI){
     lines.push('OpenAI pictures with portraits: checking…'); show(); const i = lines.length - 1;
     try {
       const fd = new FormData(); fd.append('model', settings.oaImage); fd.append('prompt', 'connection test');
@@ -1225,7 +1229,7 @@ function renderScene2(){
   hideImg();
   if (a && a.status === 'none'){ msg.innerHTML = '<div style="color:var(--on-dark-muted)">No scene on this page.</div>'; return; }
   if (settings.picGen === false){ offNote(msg); return; }
-  if (why !== 'own' && settings.picMode !== 'auto' && (!a || a.status === 'idle')){ drawPrompt(msg); return; }
+  if ((why === '' || why === 'off') && settings.picMode !== 'auto' && (!a || a.status === 'idle')){ drawPrompt(msg); return; }
   if (why){ sceneNote(why); return; }
   if (a && a.status === 'error'){ msg.innerHTML = `<div>${esc(a.msg || 'Couldn’t draw this page.')}</div><button class="btn gold" id="artRetry">Try again</button>`; $('#artRetry').onclick = () => { artCache.delete(P); requestArt(P, true, true); }; return; }
   pill.hidden = false; pill.innerHTML = '<span class="spin" aria-hidden="true"></span>Drawing this page…';
