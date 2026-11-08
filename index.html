@@ -251,7 +251,7 @@ const svgI = k => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`
 let db = null, uid = null, downloads = null;
 let activePart = null; const partArt = new Map();
 const DEFAULT_STYLE = 'painterly digital illustration, soft atmospheric light, cohesive muted palette, composition framed to fill the whole image';
-let settings = {ai:false, fs:19, rate:1, voice:'', style: DEFAULT_STYLE, picSource:'openai', picQuality:'low', picMode:'tap', imgFit:'contain', picGen:true, castOn:true, textProvider:'openai', oaKey:'', anKey:'', budget:3, spend:{},
+let settings = {ai:false, fs:19, rate:1, voice:'', style: DEFAULT_STYLE, picSource:'openai', picQuality:'low', picMode:'tap', imgFit:'contain', picGen:true, castOn:true, portraits:false, refCost:0.006, textProvider:'openai', oaKey:'', anKey:'', budget:3, spend:{},
   oaText:'gpt-6-luna', oaImage:'gpt-image-2.5-flare', anModel:'claude-sonnet-5-5', anQuick:'claude-haiku-5-5', costLow:0.007, costMed:0.014, oaIn:0.1, oaOut:0.5, anIn:3, anOut:15};
 let book = null, P = 1;
 let aiBlocked = false, backoffUntil = 0;
@@ -366,19 +366,37 @@ async function callText(prompt, opts = {}){
   const u = j.usage || {}; addSpend(((u.input_tokens || 0) * settings.anIn + (u.output_tokens || 0) * settings.anOut) / 1e6);
   return {text: (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('')};
 }
-async function openaiImage(prompt){
+let refWarned = false;
+async function openaiImage(prompt, sizeOverride, refs){
   if (!settings.oaKey) throw {code: 'bad_key', message: 'Add an OpenAI API key in Settings.'};
-  checkBudget(picCost());
-  const pane = $('#imagepane').getBoundingClientRect(); const ratio = pane.width && pane.height ? pane.width / pane.height : 0.7;
-  const size = ratio > 1.15 ? '1536x1024' : ratio < 0.87 ? '1024x1536' : '1024x1024';
-  const body = {model: settings.oaImage, prompt: prompt.slice(0, 3950), size, quality: settings.picQuality, n: 1};
-  if (/^dall-e/i.test(settings.oaImage)){ body.response_format = 'b64_json'; body.size = '1024x1792'; body.quality = settings.picQuality === 'medium' ? 'hd' : 'standard'; }
+  refs = (refs || []).filter(x => x && x.img);
+  const cost = picCost() + refs.length * Number(settings.refCost || 0);
+  checkBudget(cost);
+  let size = sizeOverride;
+  if (!size){ const pane = $('#imagepane').getBoundingClientRect(); const ratio = pane.width && pane.height ? pane.width / pane.height : 0.7; size = ratio > 1.15 ? '1536x1024' : ratio < 0.87 ? '1024x1536' : '1024x1024'; }
   let r;
-  try { r = await fetch('https://api.openai.com/v1/images/generations', {method: 'POST', headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + settings.oaKey}, body: JSON.stringify(body)}); }
-  catch(e){ throw {code: 'api', message: 'Couldn’t reach OpenAI. Are you online?'}; }
+  try {
+    if (refs.length){
+      const fd = new FormData();
+      fd.append('model', settings.oaImage); fd.append('prompt', prompt.slice(0, 3950)); fd.append('size', size); fd.append('quality', settings.picQuality); fd.append('n', '1');
+      refs.forEach((x, i) => fd.append('image[]', dataUrlToBlob(x.img), `reference-${i + 1}.jpg`));
+      r = await fetch('https://api.openai.com/v1/images/edits', {method: 'POST', headers: {'Authorization': 'Bearer ' + settings.oaKey}, body: fd});
+    } else {
+      const body = {model: settings.oaImage, prompt: prompt.slice(0, 3950), size, quality: settings.picQuality, n: 1};
+      if (/^dall-e/i.test(settings.oaImage)){ body.response_format = 'b64_json'; body.size = '1024x1792'; body.quality = settings.picQuality === 'medium' ? 'hd' : 'standard'; }
+      r = await fetch('https://api.openai.com/v1/images/generations', {method: 'POST', headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + settings.oaKey}, body: JSON.stringify(body)});
+    }
+  } catch(e){ throw {code: 'api', message: 'Couldn’t reach OpenAI. Are you online?'}; }
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw apiErr('openai', r.status, j);
-  addSpend(picCost());
+  if (!r.ok){
+    const msg = (j && j.error && j.error.message) || '';
+    if (refs.length && r.status === 400 && /image|edit|support|param|mask|format/i.test(msg)){
+      if (!refWarned){ refWarned = true; toast('Portraits couldn’t be used with this image model, so this picture was drawn without them.'); }
+      return openaiImage(prompt, sizeOverride, []);
+    }
+    throw apiErr('openai', r.status, j);
+  }
+  addSpend(cost);
   const b64 = j.data && j.data[0] && j.data[0].b64_json;
   if (!b64) throw {code: 'api', message: 'OpenAI sent back no picture.'};
   return await shrinkImage(dataUrlToBlob('data:image/png;base64,' + b64));
@@ -463,7 +481,7 @@ async function deleteBook(id){
   if (!db){ book = null; renderLibrary(); return; }
   const ref = userCol().doc('book_' + id);
   try {
-    for (const sub of ['pages','codex','art','hl','parts','cast']){
+    for (const sub of ['pages','codex','art','hl','parts','cast','portraits']){
       const s = await ref.collection(sub).get();
       for (const d of s.docs) await ref.collection(sub).doc(d.id).delete();
     }
@@ -728,6 +746,7 @@ async function openBook(id){
     cx.docs.forEach(d => { const c = d.data(); book.codex.set(c.idx, c); });
     rebuildEntities();
     if (!book.toc){ book.toc = detectChapters(book.pages); try { await ref.update({toc: book.toc}); } catch(e){} }
+    await loadPortraits();
     st.textContent = '';
     enterReader(m.page || 1);
   } catch(e){ st.textContent = 'Couldn’t open that book right now. Try again.'; }
@@ -738,6 +757,7 @@ function enterReader(page){
   partArt.forEach(a => a.url && URL.revokeObjectURL(a.url)); partArt.clear(); activePart = null; castCache.clear();
   if (!book.parts) book.parts = [];
   if (!book.looks) book.looks = {};
+  if (!book.portraits) book.portraits = {};
   book.parts.forEach(p => { if (p.img || p.svg) setPartArt(p.id, p.svg, p.img); });
   $('#library').hidden = true; $('#reader').hidden = false;
   $('#bTitle').textContent = book.title;
@@ -1003,6 +1023,7 @@ $('#setBtn').onclick = () => {
       <option value="own"${sel('own', settings.picSource)}>Only my own uploads</option></select></div>
     <div class="field"><label for="picMode">Picture generation</label><select id="picMode"><option value="tap"${settings.picMode !== 'auto' ? ' selected' : ''}>Only generate this page (tap “Draw this page”)</option><option value="auto"${settings.picMode === 'auto' ? ' selected' : ''}>Always generate (every page)</option></select><div class="muted" style="font-size:14px">The same choice, plus an on/off switch, sits at the top left of the picture while you read. Pictures you already have always show.</div></div>
     <div class="field"><label for="imgFit">Picture fit</label><select id="imgFit"><option value="contain"${settings.imgFit !== 'fill' ? ' selected' : ''}>Show the whole picture</option><option value="fill"${settings.imgFit === 'fill' ? ' selected' : ''}>Fill the space (may crop edges)</option></select></div>
+    <div class="field"><label class="switch"><input type="checkbox" id="portTog"${settings.portraits ? ' checked' : ''}> Character portraits (more consistent faces)</label><div class="muted" style="font-size:14px">Off: pictures use each character’s written look. On: Seequil draws each main character once (about $${picCost().toFixed(3)}) and sends that portrait as a guide with every picture they’re in (about $${Number(settings.refCost || 0).toFixed(3)} more per character). ChatGPT images only. See or change portraits on each character’s memory card.</div></div>
     <div class="field"><label for="picQ">ChatGPT picture quality</label><select id="picQ">
       <option value="low"${sel('low', settings.picQuality)}>Low (about $${Number(settings.costLow).toFixed(3)} each)</option>
       <option value="medium"${sel('medium', settings.picQuality)}>Medium (about $${Number(settings.costMed).toFixed(3)} each)</option></select></div>
@@ -1023,6 +1044,7 @@ $('#setBtn').onclick = () => {
       <div class="field"><label for="anQuick">Claude model for quick jobs</label><input class="search" id="anQuick" value="${esc(settings.anQuick)}"></div>
       <div class="field"><label for="costLow">Cost per low-quality picture ($)</label>${num('costLow', settings.costLow, '0.001')}</div>
       <div class="field"><label for="costMed">Cost per medium picture ($)</label>${num('costMed', settings.costMed, '0.001')}</div>
+      <div class="field"><label for="refCost">Extra cost per portrait sent with a picture ($)</label>${num('refCost', settings.refCost, '0.001')}</div>
       <div class="field"><label for="oaIn">OpenAI text: $ per million tokens in / out</label><div class="seg">${num('oaIn', settings.oaIn, '0.01')}${num('oaOut', settings.oaOut, '0.01')}</div></div>
       <div class="field"><label for="anIn">Claude: $ per million tokens in / out</label><div class="seg">${num('anIn', settings.anIn, '0.01')}${num('anOut', settings.anOut, '0.01')}</div></div>
     </div></details>
@@ -1030,10 +1052,11 @@ $('#setBtn').onclick = () => {
   const sa = $('#saveAll'); if (sa) sa.onclick = () => saveAllPictures(sa);
   const bind = (id, key, conv) => { const el = $('#' + id); if (el) el.onchange = e => { settings[key] = conv ? conv(e.target.value) : e.target.value.trim(); if (/Key$/.test(key)){ aiBlocked = false; lastKeyMsg = ''; } saveSettings(); renderScene(); if (book){ requestArt(P, true, true); ensureCodex(); } }; };
   const n = v => Math.max(0, Number(v) || 0);
-  bind('picSrc', 'picSource'); bind('picMode', 'picMode');
+  bind('picSrc', 'picSource');
+  $('#portTog').onchange = e => { settings.portraits = e.target.checked; saveSettings(); toast(settings.portraits ? 'Portraits on. New pictures will use them.' : 'Portraits off. Pictures use the written looks.'); }; bind('picMode', 'picMode');
   $('#imgFit').addEventListener('change', e => { settings.imgFit = e.target.value; applySettings(); }); bind('picQ', 'picQuality'); bind('txtSrc', 'textProvider'); bind('oaKey', 'oaKey'); bind('anKey', 'anKey');
   bind('budIn', 'budget', n); bind('oaText', 'oaText'); bind('oaImage', 'oaImage'); bind('anModel', 'anModel'); bind('anQuick', 'anQuick');
-  ['costLow','costMed','oaIn','oaOut','anIn','anOut'].forEach(k => bind(k, k, n));
+  ['costLow','costMed','refCost','oaIn','oaOut','anIn','anOut'].forEach(k => bind(k, k, n));
   $('#budIn').addEventListener('change', () => { $('#spentV').textContent = spentLine(); });
   $('#spReset').onclick = () => { settings.spend = {month: monthNow(), usd: 0}; saveSettings(); $('#spentV').textContent = spentLine(); renderScene(); };
   $('#styleIn').onchange = e => { settings.style = e.target.value.trim() || DEFAULT_STYLE; saveSettings(); };
@@ -1181,7 +1204,9 @@ async function openaiPicture(t, allowNone){
   if (p === 'NONE') return 'NONE';
   promptCache.set(t.key, p);
   const lk = looksBlock(t.text, t.page);
-  return await openaiImage(p.slice(0, 2600) + (lk ? '\n\nCHARACTER LOOKS. Draw each person exactly like this, matching every earlier picture:\n' + lk : ''));
+  const refs = await portraitRefs(t.text, t.page);
+  const refNote = refs.length ? '\n\nREFERENCE IMAGES: ' + refs.map((x, i) => `image ${i + 1} is ${x.name}`).join('; ') + '. Keep each person\'s face, hair, build and clothing exactly as in their reference image. Only the pose, expression and scene change.' : '';
+  return await openaiImage(p.slice(0, 2400) + (lk ? '\n\nCHARACTER LOOKS. Draw each person exactly like this, matching every earlier picture:\n' + lk : '') + refNote, null, refs);
 }
 const ART_RULES = `Rules:
 - Reply with only a single <svg> element. No markdown fences, no commentary.
@@ -1978,6 +2003,39 @@ async function ensureLooks(text, page){
   if (need.length) await Promise.all(need.map(en => buildLook(en, page)));
 }
 
+/* ---------- character portraits: one reference picture per character (ChatGPT images) ---------- */
+const portraitBusy = new Map();
+async function loadPortraits(){
+  book.portraits = {};
+  if (!db) return;
+  try { const s = await bref().collection('portraits').get(); s.docs.forEach(d => { const x = d.data(); if (x && x.name && x.img) book.portraits[x.name] = x.img; }); } catch(e){}
+}
+async function savePortrait(name, img){ book.portraits[name] = img; if (db) try { await bref().collection('portraits').doc(slug(name)).set({name, img}); } catch(e){} }
+async function removePortrait(name){ delete book.portraits[name]; if (db) try { await bref().collection('portraits').doc(slug(name)).delete(); } catch(e){} }
+async function makePortrait(en, page, force){
+  if (!force && book.portraits[en.name]) return book.portraits[en.name];
+  if (portraitBusy.has(en.name)) return portraitBusy.get(en.name);
+  const job = (async () => {
+    await buildLook(en, page);
+    const look = lookLine(en) || en.description || '';
+    const img = await openaiImage(`Character reference portrait for an illustrated novel. ${en.name}: ${look}
+Three-quarter view from the knees up, relaxed neutral pose, face clearly visible, plain soft light-grey background, even lighting. Style: ${settings.style || DEFAULT_STYLE}. No text, letters or logos.`, '1024x1536');
+    await savePortrait(en.name, img);
+    return img;
+  })().finally(() => portraitBusy.delete(en.name));
+  portraitBusy.set(en.name, job);
+  return job;
+}
+async function portraitRefs(text, page){
+  if (!settings.portraits || settings.picSource !== 'openai' || /^dall-e/i.test(settings.oaImage)) return [];
+  const refs = [];
+  for (const en of charsIn(text, page).slice(0, 3)){
+    try { const img = await makePortrait(en, page); if (img) refs.push({name: en.name, img}); }
+    catch(e){ if (e && /^(budget|bad_key|no_credit)$/.test(e.code)) throw e; }
+  }
+  return refs;
+}
+
 /* Memory card */
 const recapCache = new Map();
 function openCard(id){
@@ -1993,6 +2051,7 @@ function openCard(id){
     <div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">So far</h3><div class="facts">${facts.map(f => `<div class="fact"><button data-pg="${f.page}" aria-label="Go to page ${f.page}">p. ${f.page}</button><span>${esc(f.text)}</span></div>`).join('') || '<span class="muted">No notes yet.</span>'}</div></div>
     ${facts.length >= 3 && aiReady() ? `<div style="display:flex;flex-direction:column;gap:8px"><button class="btn" id="recapBtn" style="align-self:flex-start">Catch me up</button><p class="desc" id="recapT" hidden></p></div>` : ''}
     ${settings.castOn && en.type === 'character' && 'speechSynthesis' in window ? `<div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">Voice</h3><div class="seg" style="flex-wrap:wrap"><select id="cvSel" aria-label="Voice for ${esc(en.name)}" style="height:44px;border:1px solid var(--line);border-radius:10px;padding:0 8px;max-width:100%">${englishVoices().map(v => `<option value="${esc(v.voiceURI)}">${esc(v.name.replace(/^Microsoft /, '').replace(/ - .*$/, ''))}</option>`).join('')}</select><select id="cvPitch" aria-label="Pitch" style="height:44px;border:1px solid var(--line);border-radius:10px;padding:0 8px"><option value="0.8">Lower</option><option value="1">Normal</option><option value="1.2">Higher</option></select><button class="btn small" id="cvPlay">${svgI('speak').replace('<svg', '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"')}Hear it</button></div></div>` : ''}
+    ${en.type === 'character' && settings.portraits ? `<div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">Portrait</h3>${book.portraits[en.name] ? `<img src="${book.portraits[en.name]}" alt="Portrait of ${esc(en.name)}" style="width:160px;border-radius:12px;border:1px solid var(--line)">` : `<div class="muted" style="font-size:14px">No portrait yet. One is drawn the first time ${esc(en.name)} appears in a ChatGPT picture.</div>`}<div class="seg" style="flex-wrap:wrap">${settings.oaKey ? `<button class="btn small" id="porDraw">${book.portraits[en.name] ? 'Redraw portrait' : 'Draw portrait now'}</button>` : ''}<button class="btn small" id="porUp">Upload my own</button>${book.portraits[en.name] ? '<button class="btn small" id="porDel">Remove</button>' : ''}</div><div class="muted" style="font-size:13px">Every picture with ${esc(en.name)} is guided by this portrait.</div></div>` : ''}
     ${en.type === 'character' ? `<div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">Look in pictures</h3><textarea id="lookTx" class="search" style="height:auto;min-height:96px;padding:10px 12px;line-height:1.45;resize:vertical" aria-label="How ${esc(en.name)} looks in pictures" placeholder="Made from the book the first time ${esc(en.name)} is drawn.">${esc(lookLine(en))}</textarea><div class="seg" style="flex-wrap:wrap"><button class="btn small" id="lookSave">Save look</button>${aiReady() ? `<button class="btn small" id="lookRe">${lookLine(en) ? 'Re-read from book' : 'Create now'}</button>` : ''}</div><div class="muted" style="font-size:13px">Every picture uses this, so ${esc(en.name)} always looks the same. Edit it if the story changes their look, or to fix anything.</div></div>` : ''}
     <p class="muted" style="font-size:13px;margin:0">More unlocks as you keep reading.</p>`);
   if ($('#cvSel')){
@@ -2004,6 +2063,12 @@ function openCard(id){
     $('#cvPlay').onclick = () => { stopTts(); const u = new SpeechSynthesisUtterance(`Hello. I'm ${en.name}.`); const v = speechSynthesis.getVoices().find(x => x.voiceURI === sel.value); if (v) u.voice = v; u.pitch = Number(pit.value); u.rate = settings.rate; speechSynthesis.speak(u); };
   }
   body.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { closeOverlay(); goPage(+b.dataset.pg); });
+  if ($('#porUp')){
+    const reopen = () => { if ($('.panel')) openCard(en.id); };
+    const d = $('#porDraw'); if (d) d.onclick = async () => { d.disabled = true; d.textContent = 'Drawing…'; try { await makePortrait(en, P, true); } catch(e){ aiError(e); } reopen(); };
+    $('#porUp').onclick = () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.onchange = async () => { const f = inp.files[0]; if (!f) return; try { await savePortrait(en.name, await shrinkImage(f)); toast('Portrait saved'); } catch(e){ toast('Couldn’t read that picture'); } reopen(); }; inp.click(); };
+    const rm = $('#porDel'); if (rm) rm.onclick = async () => { await removePortrait(en.name); reopen(); };
+  }
   if ($('#lookSave')){
     $('#lookSave').onclick = () => { const v = $('#lookTx').value.trim(); if (v){ book.looks[en.name] = {text: v, page: P, edited: true, at: Date.now()}; } else delete book.looks[en.name]; saveLooks(); promptCache.clear(); toast('Look saved. New pictures will use it.'); };
     const re = $('#lookRe'); if (re) re.onclick = async () => { re.disabled = true; re.textContent = 'Reading…'; const lk = await buildLook(en, P, !!lookLine(en)); if ($('#lookTx')){ $('#lookTx').value = lk ? lk.text : $('#lookTx').value; re.disabled = false; re.textContent = 'Re-read from book'; } promptCache.clear(); };
