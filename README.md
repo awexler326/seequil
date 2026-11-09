@@ -79,6 +79,8 @@ The **magnifying glass** on the reading screen searches only the pages you've re
 
 ## 8. Backups and other devices
 
+**Picking up where you left off on another device:** in the book, tap the **phone icon** (on a phone: **⋯ → Continue on another device**). Scan the QR code with your other device's camera, or copy the link, and it opens the same book at the same page. The book has to be on that device too: add the same file there once, or restore a backup.
+
 Books live in **this browser on this device**. Your phone and your computer each keep their own library.
 
 - **Back up library** (on the library screen) saves one file with all your books, pictures, highlights and memory. It leaves out your API keys.
