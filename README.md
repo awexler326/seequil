@@ -81,9 +81,17 @@ The **magnifying glass** on the reading screen searches only the pages you've re
 
 **Picking up where you left off on another device:** in the book, tap the **phone icon** (on a phone: **⋯ → Continue on another device**). Scan the QR code with your other device's camera, or copy the link, and it opens the same book at the same page. The book has to be on that device too: add the same file there once, or restore a backup.
 
-Books live in **this browser on this device**. Your phone and your computer each keep their own library.
+**Automatic sync (recommended):** Seequil can keep your books, place, highlights, notes, memory and pictures the same on every device, using a private repository in your GitHub account.
 
-- **Back up library** (on the library screen) saves one file with all your books, pictures, highlights and memory. It leaves out your API keys.
+1. On github.com, make a new repository named `seequil-library`. Choose **Private** and check **Add a README file**.
+2. Go to <https://github.com/settings/personal-access-tokens/new> and make a **fine-grained token**: name it "Seequil sync", pick an expiration, choose **Only select repositories → seequil-library**, and under **Repository permissions** set **Contents** to **Read and write**. Generate and copy it.
+3. In Seequil, open **Settings → Sync between devices**, type `yourname/seequil-library`, paste the token, and tap **Connect**. Do the same on each device.
+
+It syncs when you open Seequil, a few seconds after you change something, when you switch back to the app, and every 5 minutes (or tap **Sync now**). If your other device is on a later page, you'll see "Your other device is on page X" with a button to jump there. Turn off **Sync pictures too** if you want it lighter. The token can only reach that one repository, stays on the device, and is never synced or put in backups. API keys and display settings stay per device. When the token expires, make a new one and paste it in.
+
+Without sync, books live in **this browser on this device**, and your phone and your computer each keep their own library.
+
+- **Back up library** (on the library screen) saves one file with all your books, pictures, highlights and memory. It leaves out your API keys and GitHub token.
 - **Restore a backup** loads that file on another device or browser.
 - Clearing your browser's site data deletes the library, so back up now and then.
 

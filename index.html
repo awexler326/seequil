@@ -304,6 +304,7 @@ function aiError(e){
 }
 
 /* ---------- on-device storage (IndexedDB), same shape the reader already uses ---------- */
+let onLocalWrite = null;
 const LocalDB = (() => {
   let dbp = null;
   const open = () => dbp || (dbp = new Promise((res, rej) => { const r = indexedDB.open('seequil', 1); r.onupgradeneeded = () => r.result.createObjectStore('docs'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }));
@@ -315,9 +316,9 @@ const LocalDB = (() => {
     return {
       id: path.split('/').pop(), path,
       async get(){ return snap(this.id, await req((await store('readonly')).get(path))); },
-      async set(data){ await req((await store('readwrite')).put(plain(data), path)); },
-      async update(data){ const s = await store('readwrite'); const cur = await req(s.get(path)); if (cur === undefined) throw {code: 'invalid_argument'}; await req(s.put({...cur, ...plain(data)}, path)); },
-      async delete(){ await req((await store('readwrite')).delete(path)); },
+      async set(data){ await req((await store('readwrite')).put(plain(data), path)); onLocalWrite && onLocalWrite(path); },
+      async update(data){ const s = await store('readwrite'); const cur = await req(s.get(path)); if (cur === undefined) throw {code: 'invalid_argument'}; await req(s.put({...cur, ...plain(data)}, path)); onLocalWrite && onLocalWrite(path); },
+      async delete(){ await req((await store('readwrite')).delete(path)); onLocalWrite && onLocalWrite(path); },
       collection(sub){ return colRef(path + '/' + sub); }
     };
   }
@@ -338,7 +339,10 @@ const LocalDB = (() => {
   return {
     doc: docRef, collection: p => colRef(p),
     async dump(){ const s = await store('readonly'); const [keys, vals] = await Promise.all([req(s.getAllKeys()), req(s.getAll())]); return keys.map((k, i) => [k, vals[i]]); },
-    async load(entries){ for (const [k, v] of entries){ if (typeof k === 'string' && k.startsWith('data/users/local/') && v && typeof v === 'object') await req((await store('readwrite')).put(v, k)); } }
+    async load(entries){ for (const [k, v] of entries){ if (typeof k === 'string' && k.startsWith('data/users/local/') && v && typeof v === 'object'){ await req((await store('readwrite')).put(v, k)); onLocalWrite && onLocalWrite(k); } } },
+    async getRaw(k){ return req((await store('readonly')).get(k)); },
+    async putRaw(k, v){ await req((await store('readwrite')).put(v, k)); },
+    async delRaw(k){ await req((await store('readwrite')).delete(k)); }
   };
 })();
 
@@ -499,6 +503,143 @@ async function handleGoLink(){
 }
 window.addEventListener('hashchange', () => { if (location.hash.startsWith('#go=')) handleGoLink(); });
 
+/* ---------- sync between devices through a private GitHub repository ---------- */
+const SYNC_PREFIX = 'data/users/local/';
+let syncState = {shas: {}, dirty: {}, last: 0};
+let syncing = false, syncAgain = false, syncTimer = null;
+const syncReady = () => !!(db && settings.ghRepo && settings.ghToken && settings.syncOn);
+const isPicPath = p => /\/(art|portraits)\//.test(p);
+const syncable = p => p !== 'settings' && !p.startsWith('sys/') && (settings.syncPics !== false || !isPicPath(p));
+const pathToFile = p => 'docs/' + p.split('/').map(encodeURIComponent).join('/') + '.json';
+const fileToPath = f => (f.startsWith('docs/') && f.endsWith('.json')) ? f.slice(5, -5).split('/').map(decodeURIComponent).join('/') : null;
+const saveSyncState = debounce(() => { LocalDB.putRaw('sys/sync', syncState).catch(() => {}); }, 400);
+onLocalWrite = path => {
+  if (!path.startsWith(SYNC_PREFIX)) return;
+  const p = path.slice(SYNC_PREFIX.length); if (!syncable(p)) return;
+  syncState.dirty[p] = Date.now(); saveSyncState();
+  if (syncReady()){ clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(), 8000); }
+};
+function setSyncStatus(t){ const el = $('#syncOut'); if (el) el.textContent = t; }
+function syncAgo(){ if (!syncState.last) return 'Not synced yet.'; const m = Math.round((Date.now() - syncState.last) / 60000); return 'Last synced ' + (m < 1 ? 'just now' : m === 1 ? '1 minute ago' : m < 60 ? m + ' minutes ago' : 'at ' + new Date(syncState.last).toLocaleString()) + '.'; }
+async function gh(method, url, body){
+  let r;
+  try {
+    r = await fetch('https://api.github.com' + url, {method, cache: 'no-store', headers: {'Authorization': 'Bearer ' + settings.ghToken, 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(body ? {'Content-Type': 'application/json'} : {})}, body: body ? JSON.stringify(body) : undefined});
+  } catch(e){ throw {status: 0, message: 'Couldn’t reach GitHub. Check your connection.'}; }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw {status: r.status, message: j.message || ('GitHub error ' + r.status)};
+  return j;
+}
+const b64ToText = b => new TextDecoder().decode(Uint8Array.from(atob(String(b).replace(/\s/g, '')), c => c.charCodeAt(0)));
+async function inBatches(items, n, fn){ const q = items.slice(); await Promise.all(Array.from({length: Math.min(n, q.length)}, async () => { while (q.length) await fn(q.shift()); })); }
+async function syncNow(manual){
+  if (!syncReady()) return;
+  if (syncing){ syncAgain = true; return; }
+  syncing = true; clearTimeout(syncTimer);
+  if (manual) setSyncStatus('Syncing…');
+  const R = settings.ghRepo;
+  let pulled = [], pushed = 0;
+  try {
+    const repo = await gh('GET', `/repos/${R}`);
+    const branch = repo.default_branch || 'main';
+    let head;
+    try { head = (await gh('GET', `/repos/${R}/git/ref/heads/${encodeURIComponent(branch)}`)).object.sha; }
+    catch(e){ if (e.status === 404 || e.status === 409) throw {message: 'The repository is empty. On GitHub, add a README file to it, then try again.'}; throw e; }
+    if (head === syncState.head && !Object.keys(syncState.dirty).some(syncable)){ syncState.last = Date.now(); saveSyncState(); setSyncStatus(syncAgo()); return; }
+    const tree = await gh('GET', `/repos/${R}/git/trees/${head}?recursive=1`);
+    const remote = new Map();
+    (tree.tree || []).forEach(e => { if (e.type === 'blob'){ const p = fileToPath(e.path); if (p && syncable(p)) remote.set(p, e.sha); } });
+    // pull what changed on other devices
+    const want = [...remote].filter(([p, sha]) => syncState.shas[p] !== sha);
+    let done = 0;
+    await inBatches(want, 6, async ([p, sha]) => {
+      const blob = await gh('GET', `/repos/${R}/git/blobs/${sha}`);
+      let w; try { w = JSON.parse(b64ToText(blob.content)); } catch(e){ return; }
+      const localT = syncState.dirty[p];
+      if (!localT){ await LocalDB.putRaw(SYNC_PREFIX + p, w.data); pulled.push(p); }
+      else {
+        // changed on both devices: keep both sets of changes, newest wins where they clash
+        const cur = await LocalDB.getRaw(SYNC_PREFIX + p);
+        const obj = v => v && typeof v === 'object' && !Array.isArray(v);
+        if (obj(cur) && obj(w.data)){ await LocalDB.putRaw(SYNC_PREFIX + p, localT > (w.t || 0) ? {...w.data, ...cur} : {...cur, ...w.data}); syncState.dirty[p] = Math.max(localT, w.t || 0) + 1; pulled.push(p); }
+        else if (localT <= (w.t || 0)){ if (w.data === undefined) await LocalDB.delRaw(SYNC_PREFIX + p); else await LocalDB.putRaw(SYNC_PREFIX + p, w.data); delete syncState.dirty[p]; pulled.push(p); }
+      }
+      syncState.shas[p] = sha;
+      done++; if (manual && want.length > 5) setSyncStatus(`Syncing… downloaded ${done} of ${want.length}`);
+    });
+    // things deleted on other devices
+    for (const p of Object.keys(syncState.shas)){
+      if (!remote.has(p) && syncable(p) && !syncState.dirty[p]){ await LocalDB.delRaw(SYNC_PREFIX + p); delete syncState.shas[p]; pulled.push(p); }
+    }
+    // push what changed here: one commit
+    const changes = Object.entries(syncState.dirty).filter(([p]) => syncable(p));
+    if (changes.length){
+      const entries = [], newShas = {};
+      await inBatches(changes, 4, async ([p, t]) => {
+        const d = await LocalDB.getRaw(SYNC_PREFIX + p);
+        if (d === undefined){ if (remote.has(p)) entries.push({path: pathToFile(p), mode: '100644', type: 'blob', sha: null}); newShas[p] = null; return; }
+        const blob = await gh('POST', `/repos/${R}/git/blobs`, {content: JSON.stringify({t, data: d}), encoding: 'utf-8'});
+        entries.push({path: pathToFile(p), mode: '100644', type: 'blob', sha: blob.sha}); newShas[p] = blob.sha;
+      });
+      if (entries.length){
+        const base = await gh('GET', `/repos/${R}/git/commits/${head}`);
+        const nt = await gh('POST', `/repos/${R}/git/trees`, {base_tree: base.tree.sha, tree: entries});
+        const c = await gh('POST', `/repos/${R}/git/commits`, {message: `Seequil sync (${entries.length} change${entries.length === 1 ? '' : 's'})`, tree: nt.sha, parents: [head]});
+        try { await gh('PATCH', `/repos/${R}/git/refs/heads/${encodeURIComponent(branch)}`, {sha: c.sha}); }
+        catch(e){ if (e.status === 422){ syncAgain = true; throw {message: 'Another device synced at the same moment. Trying again…', retry: true}; } throw e; }
+        pushed = entries.length; head = c.sha;
+      }
+      for (const [p, t] of changes){ if (syncState.dirty[p] === t) delete syncState.dirty[p]; if (newShas[p] === null) delete syncState.shas[p]; else if (newShas[p]) syncState.shas[p] = newShas[p]; }
+    }
+    syncState.last = Date.now(); syncState.head = head; saveSyncState();
+    setSyncStatus(syncAgo() + (pulled.length || pushed ? ` (${pulled.length} downloaded, ${pushed} uploaded)` : ''));
+    if (pulled.length) await afterPull(pulled);
+  } catch(e){
+    saveSyncState();
+    setSyncStatus(e && e.status === 401 ? 'GitHub didn’t accept the token. Make a new one and paste it here.' : e && e.status === 404 ? 'GitHub can’t find that repository, or the token can’t see it.' : 'Sync didn’t finish: ' + ((e && e.message) || 'unknown error'));
+  } finally {
+    syncing = false;
+    if (syncAgain){ syncAgain = false; setTimeout(() => syncNow(manual), 1500); }
+  }
+}
+async function afterPull(paths){
+  const books = new Set(paths.map(p => (p.match(/^book_([^/]+)/) || [])[1]).filter(Boolean));
+  await loadLibrary();
+  if (!book || !books.has(book.id) || $('#reader').hidden) return;
+  const meta = await bref().get(); const m = meta.exists ? meta.data() : null;
+  if (!m){ toast('This book was deleted on another device.'); $('#toLib').click(); return; }
+  if (tts.on) return;
+  const here = P;
+  quietUntil = Date.now() + 2500;
+  await openBook(book.id, here);
+  if (m.page && m.page !== here){
+    const t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status');
+    t.innerHTML = `Your other device is on page ${m.page}. <button class="btn small" style="margin-left:8px">Go there</button>`;
+    t.querySelector('button').onclick = () => { t.remove(); goPage(m.page); };
+    document.body.appendChild(t); setTimeout(() => t.remove(), 9000);
+  }
+}
+async function connectSync(out){
+  const repo = ($('#ghRepo').value || '').trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/\/+$/, '');
+  const tok = ($('#ghTok').value || '').trim();
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)){ out.textContent = 'Type the repository as owner/name, for example awexler326/seequil-library.'; return; }
+  if (!tok){ out.textContent = 'Paste your GitHub token first.'; return; }
+  settings.ghRepo = repo; settings.ghToken = tok;
+  out.textContent = 'Checking…';
+  try {
+    const r = await gh('GET', `/repos/${repo}`);
+    if (!r.private){ settings.syncOn = false; saveSettings(); out.textContent = 'That repository is public, so anyone could read your books. On GitHub, make it private (its Settings → Danger Zone → Change visibility), then connect again.'; return; }
+    if (r.permissions && r.permissions.push === false){ out.textContent = 'This token can read the repository but not save to it. Give it “Contents: Read and write” permission.'; return; }
+    settings.syncOn = true; saveSettings();
+    if (!syncState.last){ const all = await LocalDB.dump(); all.forEach(([k]) => { if (k.startsWith(SYNC_PREFIX)){ const p = k.slice(SYNC_PREFIX.length); if (syncable(p) && !syncState.shas[p]) syncState.dirty[p] = syncState.dirty[p] || 1; } }); }
+    out.textContent = 'Connected. Syncing…';
+    await syncNow(true);
+    $('#syncNowBtn') && ($('#syncNowBtn').hidden = false);
+  } catch(e){ settings.syncOn = false; saveSettings(); out.textContent = e.status === 401 ? 'GitHub didn’t accept that token. Copy it again, or make a new one.' : e.status === 404 ? 'GitHub can’t find that repository. Check the name, and that the token was given access to it.' : (e.message || 'Couldn’t connect.'); }
+}
+document.addEventListener('visibilitychange', () => { if (syncReady()) syncNow(); });
+setInterval(() => { if (syncReady() && document.visibilityState === 'visible') syncNow(); }, 5 * 60 * 1000);
+
 /* ---------- connection check ---------- */
 async function testConnection(out){
   const lines = [];
@@ -549,8 +690,10 @@ async function boot(){
   try { const s = await userCol().doc('settings').get(); if (s.exists) Object.assign(settings, s.data()); } catch(e){}
   applySettings();
   $('#libMsg').textContent = 'Your books are saved in this browser on this device. Use “Back up library” now and then to keep a copy.';
+  try { const st = await LocalDB.getRaw('sys/sync'); if (st && st.shas) syncState = Object.assign({shas: {}, dirty: {}, last: 0}, st); } catch(e){}
   await loadLibrary();
   if (settings.picFolded) setFold(true);
+  if (syncReady()) await syncNow();
   await handleGoLink();
 }
 const saveSettings = debounce(async () => { if (!db) return; try { await userCol().doc('settings').set({...settings}); } catch(e){} }, 600);
@@ -562,7 +705,7 @@ function applySettings(){ applyTheme(); $('#imagepane').classList.toggle('fill',
 $('#backupBtn').onclick = async () => {
   const st = $('#uploadStatus'); st.textContent = 'Preparing backup…';
   try {
-    const entries = (await LocalDB.dump()).map(([k, v]) => k.endsWith('/settings') ? [k, {...v, oaKey: '', anKey: ''}] : [k, v]);
+    const entries = (await LocalDB.dump()).map(([k, v]) => k.endsWith('/settings') ? [k, {...v, oaKey: '', anKey: '', ghToken: ''}] : [k, v]);
     await downloads.save({filename: `Seequil backup ${new Date().toISOString().slice(0, 10)}.json`, data: JSON.stringify({seequil: 1, entries})});
     st.textContent = 'Backup saved. (Your API keys aren’t included.)';
   } catch(e){ st.textContent = 'Couldn’t make the backup.'; }
@@ -573,7 +716,7 @@ $('#restoreIn').addEventListener('change', async e => {
   try {
     const j = JSON.parse(await f.text());
     if (!j || j.seequil !== 1 || !Array.isArray(j.entries)) throw 0;
-    const keep = {oaKey: settings.oaKey, anKey: settings.anKey};
+    const keep = {oaKey: settings.oaKey, anKey: settings.anKey, ghToken: settings.ghToken, ghRepo: settings.ghRepo, syncOn: settings.syncOn};
     await LocalDB.load(j.entries);
     const s = await userCol().doc('settings').get(); if (s.exists){ Object.assign(settings, s.data(), keep); saveSettings(); applySettings(); }
     await loadLibrary(); st.textContent = 'Library restored.';
@@ -898,8 +1041,9 @@ function enterReader(page){
 $('#toLib').onclick = () => { stopTts(); hideSel(); closeOverlay(); $('#reader').hidden = true; $('#library').hidden = false; book && db && loadLibrary(); renderLibrary(); };
 
 /* ---------- pages ---------- */
+let quietUntil = 0;
 const saveProgress = debounce(async () => {
-  if (!db || !book) return;
+  if (!db || !book || Date.now() < quietUntil) return;
   try { await bref().update({page: P, updatedAt: Date.now()}); const lb = libBooks.find(b=>b.id===book.id); if (lb){ lb.page = P; lb.updatedAt = Date.now(); } } catch(e){}
 }, 1500);
 function goPage(n, keepTts){
@@ -1178,6 +1322,18 @@ $('#setBtn').onclick = () => {
     <div class="field"><label for="anKey">Anthropic API key (optional, for Claude)</label><input class="search" type="password" id="anKey" autocomplete="off" spellcheck="false" placeholder="sk-ant-…" value="${esc(settings.anKey)}"></div>
     <div class="muted" style="font-size:14px">Keys stay in this browser and are sent only to OpenAI or Anthropic. Backups never include them.</div>
     <div class="field"><button class="btn small" id="connTest" style="align-self:flex-start">Test connection</button><div id="connOut" role="status" aria-live="polite" style="font-size:14px;line-height:1.45"></div></div>
+    <h3 class="h3">Sync between devices</h3>
+    <div class="field"><div class="muted" style="font-size:14px">Keeps your books, place, highlights, notes, memory and pictures the same on every device, through a private repository in your GitHub account. Set it up once on each device.</div>
+      <details><summary style="cursor:pointer;font-weight:600;min-height:32px">How to set it up (about 5 minutes)</summary><ol style="margin:8px 0 0;padding-left:20px;font-size:14px;line-height:1.55">
+        <li>On github.com, make a new repository named <b>seequil-library</b>. Choose <b>Private</b> and check <b>Add a README file</b>.</li>
+        <li>Go to github.com/settings/personal-access-tokens/new and make a <b>fine-grained token</b>. Name it “Seequil sync” and pick an expiration date. Under <b>Repository access</b>, choose <b>Only select repositories</b> and pick seequil-library. Under <b>Permissions → Repository permissions</b>, set <b>Contents</b> to <b>Read and write</b>. Generate it and copy it.</li>
+        <li>Below, type <b>yourname/seequil-library</b>, paste the token, and tap <b>Connect</b>. Do the same on your other devices with the same token.</li></ol></details>
+      <label for="ghRepo" style="margin-top:6px">Repository</label><input class="search" id="ghRepo" placeholder="awexler326/seequil-library" value="${esc(settings.ghRepo || '')}" autocomplete="off" spellcheck="false">
+      <label for="ghTok">GitHub token</label><input class="search" id="ghTok" type="password" placeholder="github_pat_…" value="${esc(settings.ghToken || '')}" autocomplete="off" spellcheck="false">
+      <label class="switch" style="font-size:14px"><input type="checkbox" id="syncPics"${settings.syncPics !== false ? ' checked' : ''}> Sync pictures too</label>
+      <div class="seg" style="flex-wrap:wrap"><button class="btn small" id="syncConn">${settings.syncOn ? 'Reconnect' : 'Connect'}</button><button class="btn small" id="syncNowBtn"${settings.syncOn ? '' : ' hidden'}>Sync now</button>${settings.syncOn ? '<button class="btn small" id="syncOff">Turn off sync</button>' : ''}</div>
+      <div id="syncOut" role="status" aria-live="polite" style="font-size:14px">${settings.syncOn ? syncAgo() : ''}</div>
+      <div class="muted" style="font-size:13px">The token can only touch that one repository. It stays on this device and is never synced or put in backups. Your API keys and settings like text size stay per device.</div></div>
     <h3 class="h3">Spending</h3>
     <div class="field"><label for="budIn">Monthly budget in dollars (0 = no limit)</label>${num('budIn', settings.budget, '0.5')}<div class="muted" id="spentV" style="font-size:14px">${spentLine()}</div><button class="btn small" id="spReset" style="align-self:flex-start">Reset this month’s count</button><div class="muted" style="font-size:14px">Seequil stops calling OpenAI or Anthropic when it reaches this. Amounts are estimates; your provider’s billing page has the real numbers.</div></div>
     <details><summary style="cursor:pointer;font-weight:600;min-height:32px">Advanced: models and prices</summary><div style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
@@ -1210,6 +1366,10 @@ $('#setBtn').onclick = () => {
   $('#spReset').onclick = () => { settings.spend = {month: monthNow(), usd: 0}; saveSettings(); $('#spentV').textContent = spentLine(); renderScene(); };
   $('#styleIn').onchange = e => { settings.style = e.target.value.trim() || DEFAULT_STYLE; saveSettings(); };
   $('#connTest').onclick = () => testConnection($('#connOut'));
+  $('#syncConn').onclick = () => connectSync($('#syncOut'));
+  $('#syncNowBtn').onclick = () => syncNow(true);
+  $('#syncPics').onchange = e => { settings.syncPics = e.target.checked; saveSettings(); syncState.head = null; if (e.target.checked) LocalDB.dump().then(all => { all.forEach(([k]) => { const p = k.slice(SYNC_PREFIX.length); if (k.startsWith(SYNC_PREFIX) && isPicPath(p) && !syncState.shas[p]) syncState.dirty[p] = syncState.dirty[p] || 1; }); syncNow(true); }); };
+  const so = $('#syncOff'); if (so) so.onclick = () => { settings.syncOn = false; saveSettings(); setSyncStatus('Sync is off on this device. Your books here and in GitHub are kept.'); so.remove(); $('#syncNowBtn').hidden = true; $('#syncConn').textContent = 'Connect'; };
   const setFs = d => { settings.fs = Math.max(14, Math.min(28, settings.fs + d)); $('#fsV').textContent = settings.fs + 'px'; applySettings(); saveSettings(); };
   $('#themeSel').onchange = e => { settings.theme = e.target.value; applyTheme(); saveSettings(); };
   $('#fsDn').onclick = () => setFs(-1); $('#fsUp').onclick = () => setFs(1);
