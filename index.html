@@ -2371,43 +2371,86 @@ function looksBlock(text, page){
   return [...charsIn(text, page), ...keyExtrasIn(text, page)].map(en => lookLine(en) ? `${en.name}${en.type !== 'character' ? ' (' + en.type + ')' : ''}: ${lookLine(en)}` : '').filter(Boolean).join('\n');
 }
 const saveLooks = debounce(async () => { if (db && book) try { await bref().update({looks: book.looks}); } catch(e){} }, 600);
+const LOOK_V = 2;
+const LOOK_KW_G = new RegExp(LOOK_KW.source, 'gi');
+const lookScore = t => (t.match(LOOK_KW_G) || []).length;
+// Every passage up to this page that could describe how this entity looks: paragraphs naming it,
+// plus the next couple of paragraphs, which often describe them as "he" or "she".
+function lookCandidates(en, page, fromPage){
+  const names = [en.name, ...en.aliases].filter(n => n && n.length >= 3);
+  const out = [];
+  for (let pg = fromPage || 1; pg <= page; pg++){
+    const ps = book.pages[pg - 1] || [];
+    ps.forEach((t, i) => {
+      if (!names.some(n => t.includes(n))) return;
+      out.push({pg, i, t, sc: lookScore(t) * 2 + 1, near: false});
+      for (let j = i + 1; j <= i + 2 && j < ps.length; j++){ if (names.some(n => ps[j].includes(n))) break; const sc = lookScore(ps[j]); if (sc) out.push({pg, i: j, t: ps[j], sc, near: true}); }
+    });
+  }
+  const seen = new Set(); return out.filter(x => { const k = x.pg + ':' + x.i; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+function lookExcerpts(en, page){
+  const c = lookCandidates(en, page);
+  const pick = c.filter(x => en.type !== 'character' || x.sc > 1).sort((a, b) => b.sc - a.sc || a.pg - b.pg).slice(0, 18);
+  if (pick.length < 4) pick.push(...c.filter(x => !pick.includes(x)).slice(0, 4 - pick.length));
+  pick.sort((a, b) => a.pg - b.pg || a.i - b.i);
+  let total = 0; const parts = [];
+  for (const x of pick){ const s = `[p. ${x.pg}${x.near ? ', right after a paragraph naming ' + en.name : ''}] ${x.t.slice(0, 1200)}`; if (total + s.length > 14000) break; parts.push(s); total += s.length; }
+  return parts.join('\n\n');
+}
 async function buildLook(en, page, force){
   if (!force && book.looks[en.name]) return book.looks[en.name];
   if (lookBusy.has(en.name)) return lookBusy.get(en.name);
   const job = (async () => {
     if (!aiReady()) return null;
-    const names = [en.name, ...en.aliases].filter(n => n && n.length >= 3);
-    const withKw = [], plain = [];
-    for (let pg = 1; pg <= page; pg++){
-      (book.pages[pg - 1] || []).forEach(t => { if (!names.some(n => t.includes(n))) return; ((en.type !== 'character' || LOOK_KW.test(t)) ? withKw : plain).push(`[p. ${pg}] ${t.slice(0, 600)}`); });
-      if (withKw.length >= 14) break;
-    }
-    const excerpts = withKw.slice(0, 14).concat(plain.slice(0, 4)).join('\n\n').slice(0, 9000);
-    const prev = !force ? '' : (book.looks[en.name] && book.looks[en.name].text) || '';
+    const excerpts = lookExcerpts(en, page);
+    const old = book.looks[en.name];
+    // looks made the old way may hold wrong guesses, so they aren't carried over
+    const prev = force && old && old.text && (old.edited || (old.v || 1) >= LOOK_V) ? old.text : '';
     const what = en.type === 'place' ? `the place ${en.name}` : en.type === 'thing' ? `the object ${en.name}` : `the character ${en.name}`;
-    const details = en.type === 'place' ? 'its size, shape, buildings or landscape, materials, colors, age and condition, and surroundings' : en.type === 'thing' ? 'its size, shape, material, colors, markings, age and condition' : 'hair color and style, eye color, skin tone, age, build, height, facial hair, scars or marks, and usual clothing';
-    const r = await sample(`Write a fixed visual description of ${what} from the book "${book.title}" for an illustrator, so it looks identical in every picture.
-- Use every physical detail the excerpts state, exactly: ${details}.
-- For anything not stated, choose ONE specific, ordinary detail that fits the story's setting and commit to it (for example "short dark-brown hair" or "grey slate roof", not "some color").${prev ? '\n- Keep everything from the PREVIOUS LOOK that the excerpts don\'t contradict.' : ''}
-- Never contradict the text. Use only these excerpts and notes, never outside knowledge of the book.
-- 35 to 60 words, one line, most distinctive traits first. No name at the start, no story events.
-${en.description ? 'NOTE: ' + en.description + '\n' : ''}${prev ? 'PREVIOUS LOOK: ' + prev + '\n' : ''}
+    const details = en.type === 'place' ? 'size, shape, buildings or landscape, materials, colors, age and condition, surroundings' : en.type === 'thing' ? 'size, shape, material, colors, markings, age and condition' : 'hair color (including streaks or patches of another color), hair style, eye color, skin tone, age, height, build, facial hair, scars or marks, usual clothing';
+    const note = en.description && (en.descPage || 0) <= page ? en.description : '';
+    const r = await sample(`You are making a fixed visual description of ${what} from the book "${book.title}" for an illustrator, so it looks identical in every picture.
+
+Go through the excerpts carefully and find EVERY physical detail about ${en.name}: ${details}.
+- Excerpts marked "right after a paragraph naming ${en.name}" often describe them as he, she or they. Use those details only if they clearly refer to ${en.name}, not to someone else in the scene.
+- Copy stated details exactly. "Red hair with a white streak" means red hair with a white streak, never brown hair. "Tall" or "towered over" means tall.
+- Only for things the excerpts never mention, pick one plain detail that fits the setting, and list it in "guessed". Never guess something the text states, and never contradict the text.${prev ? `\n- PREVIOUS LOOK below was written earlier. The excerpts always win over it. Keep its other details.` : ''}
+- Use only these excerpts and notes, never outside knowledge of the book.
+
+${note ? 'NOTE: ' + note + '\n' : ''}${prev ? 'PREVIOUS LOOK: ' + prev + '\n' : ''}
 EXCERPTS:
 ${excerpts || '(no descriptions yet)'}
 
-Reply with just the description.`, {modelTier: 'quick'});
-    const text = String((r && r.text) || '').trim().replace(/^["“]|["”]$/g, '');
+Reply with JSON only:
+{"stated": ["each physical detail the excerpts give, with its page, e.g. \\"red hair with a white streak (p. 12)\\""], "guessed": ["the kinds of detail you had to choose, e.g. \\"eye color\\""], "look": "the description: 35 to 70 words, one line, most distinctive traits first, no name at the start, no story events"}`, {modelTier: 'default'});
+    const raw = String((r && r.text) || '');
+    let j = null; try { j = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1)); } catch(e){}
+    const text = String((j && j.look) || (raw.includes('{') ? '' : raw)).trim().replace(/^["“]|["”]$/g, '');
     if (!text) return null;
-    book.looks[en.name] = {text, page, at: Date.now()};
+    const guessed = j && Array.isArray(j.guessed) ? j.guessed.map(String).slice(0, 12) : [];
+    book.looks[en.name] = {text, page, at: Date.now(), v: LOOK_V, guessed};
     saveLooks();
+    // a portrait drawn from an older, different look would keep the wrong appearance, so redraw it next time
+    if (old && old.text && old.text !== text && book.portraits && book.portraits[en.name]) await removePortrait(en.name);
     return book.looks[en.name];
   })().catch(e => { aiError(e); return null; }).finally(() => lookBusy.delete(en.name));
   lookBusy.set(en.name, job);
   return job;
 }
+// An automatic look is re-read when it was made the old way, or when it had to guess and the
+// book has since described this entity more.
+function lookStale(en, page){
+  const lk = book.looks[en.name];
+  if (!lk || lk.edited) return false;
+  if ((lk.v || 1) < LOOK_V) return true;
+  if (!(lk.guessed || []).length || page - (lk.page || 0) < 3) return false;
+  return lookCandidates(en, page, (lk.page || 0) + 1).some(x => x.sc >= 2);
+}
 async function ensureLooks(text, page){
-  const need = [...charsIn(text, page), ...keyExtrasIn(text, page)].filter(en => !book.looks[en.name]);
-  if (need.length) await Promise.all(need.map(en => buildLook(en, page)));
+  const ents = [...charsIn(text, page), ...keyExtrasIn(text, page)];
+  const need = ents.filter(en => !book.looks[en.name]), stale = ents.filter(en => lookStale(en, page));
+  if (need.length || stale.length) await Promise.all([...need.map(en => buildLook(en, page)), ...stale.map(en => buildLook(en, page, true))]);
 }
 
 /* ---------- character portraits: one reference picture per character (ChatGPT images) ---------- */
