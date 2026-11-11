@@ -1493,6 +1493,8 @@ async function writeImagePrompt(t, allowNone){
   const known = knownFor(t.text, t.page);
   const r = await callText(`Write a prompt for an AI image generator (such as ChatGPT images, Midjourney or Gemini) that illustrates ${t.kind === 'part' ? 'this passage' : 'the main moment on this page'} of the book "${book.title}".
 - 60 to 120 words, one paragraph, plain text, no labels or quote marks.
+- Pick ONE moment. If the scene changes partway through (a time skip, a new place, a break like "* * *", or a cut to other characters), choose a single scene and show only the people actually present in that moment. Never bring in characters from the other scene.
+- Call every person in the picture by their name, and never name anyone who is not in it, so the illustrator knows exactly who to draw.
 - Describe what to see: the setting, who is there and what they look like, what they are doing, the lighting, the mood and the framing.
 - Describe each character exactly as their look below says. Never change their hair, eye or skin color, age, build or clothing.
 - Use only what the text shows. Nothing from later in the book, even if you recognize it.
@@ -1507,14 +1509,21 @@ Reply with just the prompt.`, {modelTier: 'quick'});
   if (/^NONE\b/.test(txt)) return 'NONE';
   return txt || templatePrompt(t);
 }
+// Who is in the picture: the people the written prompt names, not everyone on the page.
+// (A page can hold two scenes; only the one being drawn should bring its characters.)
+function castText(t, prompt){
+  const p = prompt || promptCache.get(t.key);
+  return p && p !== 'NONE' && textReady() ? p : t.text;
+}
 async function openaiPicture(t, allowNone){
   await ensureLooks(t.text, t.page);
   let p = promptCache.get(t.key);
   if (!p) p = await writeImagePrompt(t, allowNone);
   if (p === 'NONE') return 'NONE';
   promptCache.set(t.key, p);
-  const lk = looksBlock(t.text, t.page);
-  const refs = await portraitRefs(t.text, t.page);
+  const cast = castText(t, p);
+  const lk = looksBlock(cast, t.page);
+  const refs = await portraitRefs(cast, t.page);
   const refNote = refs.length ? '\n\nREFERENCE IMAGES: ' + refs.map((x, i) => `image ${i + 1} is ${x.name}${x.type && x.type !== 'character' ? ' (' + x.type + ')' : ''}`).join('; ') + '. Keep each person\'s face, hair, build and clothing, and each place or object, exactly as in its reference image. Only the pose, expression, camera angle and scene change.' : '';
   return await openaiImage(p.slice(0, 2400) + (lk ? '\n\nCHARACTER LOOKS. Draw each person exactly like this, matching every earlier picture:\n' + lk : '') + refNote, null, refs);
 }
@@ -1607,8 +1616,9 @@ async function redrawWithChanges(part, change, mode, base){
     await ensureLooks(text, page);
     let out = null, svg = null;
     if (usesOpenAI()){
-      const lk = looksBlock(text, page);
-      const refs = await portraitRefs(text, page);
+      const cast = castText({key: part ? part.id : 'p' + page, text}, null);
+      const lk = looksBlock(cast, page);
+      const refs = await portraitRefs(cast, page);
       const lookPart = lk ? '\n\nCHARACTER LOOKS. Draw each person exactly like this:\n' + lk : '';
       if (mode === 'edit' && (base.img || base.svg)){
         const cur = base.img || await blobToDataUrl(await svgToPng(base.svg));
@@ -1941,6 +1951,7 @@ async function loadArt(job){
   const known = knownFor(text, page);
   const prompt = `You are the illustrator for an illustrated e-reader. Draw ONE illustration for this page of the book "${book.title}", showing the most important moment or setting on the page.
 ${ART_RULES}
+- If the scene changes partway through the page, pick one scene and draw only the people present in it.
 - If the page has no scene (title page, copyright, contents, acknowledgments, index), reply with exactly NONE.
 ${known ? 'Characters and places on this page. Draw every character exactly as described here (same hair, eye and skin color, age, build and clothing in every picture):\n' + known + '\n' : ''}
 PAGE ${page}:
