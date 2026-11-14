@@ -138,6 +138,7 @@ input[type=range]{width:100%;accent-color:var(--gold);margin:0}
 .desc{margin:0;font-family:Literata,Georgia,serif;font-size:16px;line-height:1.55}
 .facts{display:flex;flex-direction:column;gap:4px}
 .fact{display:flex;gap:10px;align-items:baseline;font-size:15px;line-height:1.45}
+.fact .fbk{flex-shrink:0;min-width:52px;padding:7px 8px;background:var(--chip);color:var(--muted);border-radius:8px;font-size:12px;font-weight:600;text-align:center}
 .fact button{flex-shrink:0;min-width:52px;height:32px;border:0;background:var(--chip);color:var(--amber);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer}
 .ent-list{display:flex;flex-direction:column;gap:2px}
 .ent-item{display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:44px;padding:0 12px;border:0;border-radius:10px;background:none;cursor:pointer;text-align:left;font-size:15px}
@@ -264,6 +265,7 @@ const ICON = {
   play:'<path d="M8 5v14l11-7z"/>',
   pause:'<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
   close:'<path d="M6 6l12 12M18 6L6 18"/>',
+  book:'<path d="M4 5a2 2 0 0 1 2-2h5v17H6a2 2 0 0 0-2 2z"/><path d="M20 5a2 2 0 0 0-2-2h-5v17h5a2 2 0 0 1 2 2z"/>',
   lock:'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
   note:'<path d="M4 20h4L19 9l-4-4L4 16z"/>',
   copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
@@ -739,8 +741,10 @@ function renderLibrary(){
   for (const b of list){
     const pct = Math.round(((b.page||1)/(b.numPages||1))*100);
     const card = document.createElement('div'); card.className = 'book';
-    card.innerHTML = `<h3>${esc(b.title)}</h3><div class="muted" style="font-size:14px">Page ${b.page||1} of ${b.numPages}</div><div class="bar"><div style="width:${pct}%"></div></div><div class="row"><button class="btn primary small" data-open>Continue</button><button class="btn small" data-del>Delete</button></div>`;
+    const ser = b.series && b.series.name ? `<div class="muted" style="font-size:13px">${b.series.num != null ? 'Book ' + fmtNum(b.series.num) + ' of ' : ''}${esc(b.series.name)}</div>` : '';
+    card.innerHTML = `<h3>${esc(b.title)}</h3>${ser}<div class="muted" style="font-size:14px">Page ${b.page||1} of ${b.numPages}</div><div class="bar"><div style="width:${pct}%"></div></div><div class="row"><button class="btn primary small" data-open>Continue</button>${db ? '<button class="btn small" data-ser>Series</button>' : ''}<button class="btn small" data-del>Delete</button></div>`;
     card.querySelector('[data-open]').onclick = () => openBook(b.id);
+    const sb = card.querySelector('[data-ser]'); if (sb) sb.onclick = () => seriesDialog(b);
     const del = card.querySelector('[data-del]');
     del.onclick = async () => {
       if (del.dataset.sure){ del.disabled = true; del.textContent = 'Deleting…'; await deleteBook(b.id); return; }
@@ -787,14 +791,14 @@ async function importFile(file){
     st.textContent = (e && e.code === 'quota_exceeded') ? 'Your storage is full. Delete a book and try again.' : (e && e.userMsg) || 'Couldn’t open that file. Is it damaged or password-protected?';
   } finally { importing = false; }
 }
-async function saveNewBook({id, title, pages, toc}, st){
+async function saveNewBook({id, title, pages, toc, series}, st){
   book = {id, title, toc: toc || [], numPages: pages.length, page: 1, voices: {}, genders: {}, looks: {}, pages, codex: new Map(), entities: [], hl: [], parts: []};
   if (db){
     for (let g = 0; g * GROUP < pages.length; g++){
       st.textContent = `Saving… ${Math.min((g+1)*GROUP, pages.length)} of ${pages.length} pages`;
       await bref().collection('pages').doc('g' + g).set({g, pages: pages.slice(g*GROUP, (g+1)*GROUP).map(p => ({paras: p}))});
     }
-    const meta = {kind:'book', id, title, toc: toc || [], numPages: pages.length, page: 1, createdAt: Date.now(), updatedAt: Date.now()};
+    const meta = {kind:'book', id, title, toc: toc || [], numPages: pages.length, page: 1, createdAt: Date.now(), updatedAt: Date.now(), ...(series ? {series} : {})};
     await bref().set(meta);
     libBooks.unshift(meta);
   }
@@ -889,7 +893,7 @@ async function readEpub(file, st){
   toc = toc.filter((e, i) => !(i && toc[i - 1].page === e.page && toc[i - 1].title === e.title));
   if (toc.length < 2) toc = detectChapters(pages);
   if (toc.length < 2 && sections.length >= 2) toc = sections.map((x, i) => ({title: x.first.length <= 80 ? x.first : 'Section ' + (i + 1), page: x.page, level: 1}));
-  return {id: hashBytes(u8), title, pages, toc};
+  return {id: hashBytes(u8), title, pages, toc, series: epubSeries(opf)};
 }
 function epubBlocks(root){ return epubBlocks2(root).texts; }
 function epubBlocks2(root){
@@ -1016,9 +1020,12 @@ async function openBook(id, atPage){
     pg.docs.map(d => d.data()).sort((a,b)=>a.g-b.g).forEach(g => (g.pages||[]).forEach(p => pages.push(p.paras || [])));
     book = {id, title: m.title, toc: Array.isArray(m.toc) ? m.toc : null, numPages: m.numPages, page: m.page || 1, voices: m.voices || {}, genders: m.genders || {}, looks: m.looks || {}, mainOverride: m.mainOverride || {}, refOff: m.refOff || {}, pages, codex: new Map(), entities: [], hl: hl.docs.map(d => d.data()), parts: pt.docs.map(d => ({...d.data()}))};
     cx.docs.forEach(d => { const c = d.data(); book.codex.set(c.idx, c); });
+    await loadPortraits();
+    Object.assign(book, {priorLooks: {}, priorPortraits: {}, priorVoices: {}, priorGenders: {}, priorMain: {}});
+    if (!libBooks.length) await loadLibrary();
+    await loadSeriesMemory({...m, id});
     rebuildEntities();
     if (!book.toc){ book.toc = detectChapters(book.pages); try { await ref.update({toc: book.toc}); } catch(e){} }
-    await loadPortraits();
     st.textContent = '';
     enterReader(atPage || m.page || 1);
   } catch(e){ st.textContent = 'Couldn’t open that book right now. Try again.'; }
@@ -1993,6 +2000,142 @@ function cleanSvg(raw){
   return out;
 }
 
+/* ---------- series: earlier books' memory carries into the next book ---------- */
+const seriesKey = s => s && s.name ? s.name.trim().toLowerCase() : '';
+const bookLabel = b => b.series && b.series.num != null ? `Book ${fmtNum(b.series.num)}` : b.title;
+function fmtNum(n){ return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10); }
+// Turn saved memory chunks into a list of people, places and things (no spoiler limit: used for whole earlier books).
+function entitiesFromCodex(chunks, numPages){
+  const list = [], byKey = new Map();
+  for (const c of [...chunks].sort((a, b) => a.idx - b.idx)){
+    const from = c.idx * CHUNK + 1, to = Math.min(numPages, from + CHUNK - 1);
+    for (const x of (c.entities || [])){
+      if (!x || !x.name) continue;
+      const keys = [x.name, ...(x.aliases || [])].filter(Boolean).map(k => String(k).toLowerCase());
+      let en = keys.map(k => byKey.get(k)).find(Boolean);
+      if (!en){ en = {name: String(x.name), type: x.type || 'thing', aliases: new Set(), description: '', facts: []}; list.push(en); }
+      (x.aliases || []).forEach(a => { if (a && a !== en.name) en.aliases.add(String(a)); });
+      keys.forEach(k => { if (!byKey.has(k)) byKey.set(k, en); });
+      for (const f of (x.facts || [])){ if (f && f.text){ let pg = Math.round(Number(f.page)); if (!(pg >= from && pg <= to)) pg = to; en.facts.push({pg, text: String(f.text)}); } }
+      if (x.description && !en.description) en.description = String(x.description);
+    }
+  }
+  list.forEach(en => en.facts.sort((a, b) => a.pg - b.pg));
+  return list;
+}
+async function earlierInSeries(meta){
+  const k = seriesKey(meta.series);
+  if (!k || meta.series.num == null) return [];
+  return libBooks.filter(b => b.id !== meta.id && seriesKey(b.series) === k && b.series.num != null && b.series.num < meta.series.num).sort((a, b) => a.series.num - b.series.num);
+}
+// Load everything the earlier books taught: memory notes, looks, portraits and voices.
+async function loadSeriesMemory(meta){
+  book.series = meta.series || null; book.prior = []; book.priorBooks = [];
+  if (!db) return;
+  const earlier = await earlierInSeries(meta);
+  const byKey = new Map();
+  for (const b of earlier){
+    const ref = userCol().doc('book_' + b.id);
+    let cx = [], m = b, por = [];
+    try { const [c, mm, pp] = await Promise.all([ref.collection('codex').get(), ref.get(), ref.collection('portraits').get()]); cx = c.docs.map(d => d.data()); if (mm.exists) m = mm.data(); por = pp.docs.map(d => d.data()); } catch(e){ continue; }
+    const label = bookLabel(b);
+    const built = new Set(cx.map(c => c.idx)); let covered = 0; while (built.has(Math.floor(covered / CHUNK)) && covered < b.numPages) covered = Math.min(b.numPages, (Math.floor(covered / CHUNK) + 1) * CHUNK);
+    book.priorBooks.push({id: b.id, title: b.title, label, numPages: b.numPages, covered});
+    for (const x of entitiesFromCodex(cx, b.numPages)){
+      const keys = [x.name, ...x.aliases].map(s => s.toLowerCase());
+      let en = keys.map(k => byKey.get(k)).find(Boolean);
+      if (!en){ en = {name: x.name, type: x.type, aliases: new Set(), description: '', facts: []}; book.prior.push(en); }
+      x.aliases.forEach(a => a !== en.name && en.aliases.add(a));
+      keys.forEach(k => { if (!byKey.has(k)) byKey.set(k, en); });
+      if (x.description) en.description = x.description;   // the latest book's introduction wins
+      x.facts.forEach(f => en.facts.push({page: 0, book: label, text: f.text}));
+    }
+    // later books win over earlier ones; this book's own choices win over all of them
+    Object.entries(m.looks || {}).forEach(([n, lk]) => { if (lk && lk.text) book.priorLooks[n] = {...lk, page: 0, from: label}; });
+    por.forEach(x => { if (x && x.name && x.img) book.priorPortraits[x.name] = x.img; });
+    Object.entries(m.voices || {}).forEach(([n, v]) => { book.priorVoices[n] = v; });
+    Object.entries(m.genders || {}).forEach(([n, g]) => { book.priorGenders[n] = g; });
+    Object.entries(m.mainOverride || {}).forEach(([n, v]) => { book.priorMain[n] = v; });
+  }
+  Object.entries(book.priorLooks).forEach(([n, lk]) => { if (!book.looks[n]) book.looks[n] = lk; });
+  Object.entries(book.priorPortraits).forEach(([n, img]) => { if (!book.portraits[n]) book.portraits[n] = img; });
+  Object.entries(book.priorVoices).forEach(([n, v]) => { if (!book.voices[n]) book.voices[n] = v; });
+  Object.entries(book.priorGenders).forEach(([n, g]) => { if (!book.genders[n]) book.genders[n] = g; });
+  Object.entries(book.priorMain).forEach(([n, v]) => { if (!book.mainOverride[n]) book.mainOverride[n] = v; });
+}
+// Add what earlier books know to this book's memory list.
+function mergePrior(list){
+  if (!book.prior || !book.prior.length) return list;
+  const byKey = new Map(); list.forEach(en => [en.name, ...en.aliases].forEach(k => byKey.set(k.toLowerCase(), en)));
+  for (const p of book.prior){
+    let en = [p.name, ...p.aliases].map(k => byKey.get(k.toLowerCase())).find(Boolean);
+    if (!en){ en = {id: slug(p.name), name: p.name, type: p.type, aliases: new Set(), description: '', descPage: Infinity, facts: [], firstPage: 0}; list.push(en); [p.name, ...p.aliases].forEach(k => byKey.set(k.toLowerCase(), en)); }
+    p.aliases.forEach(a => a !== en.name && en.aliases.add(a));
+    en.facts = [...p.facts, ...en.facts.filter(f => !f.book)];
+    if (p.description && (!en.description || en.descPage > 0)){ en.priorDesc = p.description; if (!en.description){ en.description = p.description; en.descPage = 0; } }
+    en.firstPage = 0;
+  }
+  return list;
+}
+function seriesNote(){
+  const pb = book.priorBooks || [];
+  if (!pb.length) return '';
+  const short = pb.filter(b => b.covered < b.numPages);
+  return `<div class="shield">${svgI('book')}<span><strong>Includes ${pb.length === 1 ? pb[0].label : pb.map(b => b.label).join(', ')} of ${esc(book.series.name)}.</strong> Notes from earlier books are labeled with the book.${short.length ? ' ' + short.map(b => `${esc(b.label)}’s memory only covers pages 1–${b.covered} of ${b.numPages}.`).join(' ') : ''}</span></div>${short.length && aiReady() ? short.map(b => `<button class="btn small" data-finish="${esc(b.id)}">Finish ${esc(b.label)}’s memory</button>`).join('') : ''}`;
+}
+// Build the rest of an earlier book's memory, then come back to this book and page.
+async function finishMemory(id){
+  const back = {id: book.id, page: P}; closeOverlay();
+  while (codexBusy) await new Promise(r => setTimeout(r, 300));
+  await openBook(id);
+  if (!book || book.id !== id){ return; }
+  toast('Building this book’s memory. Seequil will take you back when it’s done.');
+  const need = () => Math.floor((book.numPages - 1) / CHUNK) + 1 - book.codex.size;
+  let left = need(), tries = 0;
+  while (left > 0 && tries < 4 && book && book.id === id){
+    while (codexBusy) await new Promise(r => setTimeout(r, 300));
+    await ensureCodex(true);
+    const now = need(); tries = now < left ? 0 : tries + 1; left = now;
+    if (left > 0) await new Promise(r => setTimeout(r, 1000));
+  }
+  const done = book && book.id === id && need() <= 0;
+  await openBook(back.id, back.page);
+  toast(done ? 'Done. Memory from the earlier book is in.' : 'Memory stopped partway. Try again in a moment.');
+}
+function seriesDialog(b){
+  const names = [...new Set(libBooks.filter(x => x.series && x.series.name).map(x => x.series.name))];
+  const ov = $('#overlay');
+  ov.innerHTML = `<div class="scrim" data-close></div><div class="modal" role="dialog" aria-modal="true" aria-labelledby="srT">
+    <b id="srT">Series for “${esc(b.title)}”</b>
+    <div class="muted" style="font-size:14px">Books in the same series share memory. When you read a book, Seequil knows everything from the books numbered before it, including character looks, portraits and voices. Later books never show up in an earlier one.</div>
+    <label for="srN">Series name</label><input class="search" id="srN" list="srL" value="${esc((b.series && b.series.name) || '')}" placeholder="e.g. The Stormlight Archive" autocomplete="off">
+    <datalist id="srL">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+    <label for="srI">Book number</label><input class="search" id="srI" type="number" min="0" step="0.5" inputmode="decimal" style="max-width:120px" value="${b.series && b.series.num != null ? b.series.num : ''}">
+    <div id="srS" class="muted" style="font-size:13px" role="status" aria-live="polite"></div>
+    <div class="row">${b.series ? '<button class="btn" id="srX">Not in a series</button>' : ''}<button class="btn" data-close>Cancel</button><button class="btn primary" id="srOk">Save</button></div></div>`;
+  ov.querySelectorAll('[data-close]').forEach(x => x.onclick = closeOverlay);
+  const save = async series => {
+    try { await userCol().doc('book_' + b.id).update({series}); b.series = series; closeOverlay(); renderLibrary(); toast(series ? `Saved as ${bookLabel(b)} of ${series.name}` : 'Removed from the series'); }
+    catch(e){ $('#srS').textContent = 'Couldn’t save. Try again.'; }
+  };
+  $('#srOk').onclick = () => {
+    const name = $('#srN').value.trim(), num = parseFloat($('#srI').value);
+    if (!name){ $('#srS').textContent = 'Type the series name.'; return; }
+    if (!isFinite(num)){ $('#srS').textContent = 'Type which book in the series this is (1, 2, 3…).'; return; }
+    save({name: name.slice(0, 120), num});
+  };
+  const x = $('#srX'); if (x) x.onclick = () => save(null);
+}
+function epubSeries(opf){
+  const metas = byTag(opf, 'meta'); let name = '', num = null;
+  metas.forEach(m => { const n = m.getAttribute('name'), c = m.getAttribute('content'); if (n === 'calibre:series' && c) name = c.trim(); if (n === 'calibre:series_index' && c) num = parseFloat(c); });
+  if (!name){
+    const coll = metas.find(m => m.getAttribute('property') === 'belongs-to-collection');
+    if (coll){ name = coll.textContent.trim(); const id = coll.getAttribute('id'); const pos = id && metas.find(m => m.getAttribute('property') === 'group-position' && m.getAttribute('refines') === '#' + id); if (pos) num = parseFloat(pos.textContent); }
+  }
+  return name ? {name: name.slice(0, 120), num: isFinite(num) ? num : null} : null;
+}
+
 /* ---------- memory (codex) ---------- */
 let codexBusy = false;
 function slug(s){ return 'e_' + String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').slice(0,40); }
@@ -2021,14 +2164,14 @@ function rebuildEntities(){
     }
   }
   list.forEach(en => en.facts.sort((a,b) => a.page - b.page));
-  book.entities = list.filter(en => en.firstPage !== Infinity);
+  book.entities = mergePrior(list.filter(en => en.firstPage !== Infinity));
 }
 function setMemLbl(t){ $('#memLbl').textContent = t || ''; }
 const MEM_PAR = 4; // batches worked on at the same time when catching up
-async function ensureCodex(){
+async function ensureCodex(all){
   if (!book || !aiReady() || codexBusy || Date.now() < backoffUntil) return;
   const last = Math.floor((book.numPages - 1) / CHUNK);
-  const target = Math.min(last, Math.floor((P - 1) / CHUNK) + 1);
+  const target = all ? last : Math.min(last, Math.floor((P - 1) / CHUNK) + 1);
   const bid = book.id;
   const todo = []; for (let idx = 0; idx <= target; idx++) if (!book.codex.has(idx)) todo.push(idx);
   if (!todo.length) return;
@@ -2049,7 +2192,7 @@ async function ensureCodex(){
   };
   try { await Promise.all(Array.from({length: Math.min(MEM_PAR, total)}, worker)); }
   finally { codexBusy = false; setMemLbl(''); }
-  if (!failed && book && book.id === bid && Math.min(last, Math.floor((P - 1) / CHUNK) + 1) > target) ensureCodex();
+  if (!failed && book && book.id === bid && !all && Math.min(last, Math.floor((P - 1) / CHUNK) + 1) > target) ensureCodex();
 }
 async function buildChunk(idx, from, to){
   let pagesTxt = '';
@@ -2104,7 +2247,7 @@ $('#memBtn').onclick = () => {
   let extra = '';
   if (!aiReady()) extra = `<p class="muted">Turn on pictures and memory and add an API key in Settings to start building memory.</p>`;
   else if (!ents.length) extra = '<p class="muted">Nothing yet. Memory fills in as you read.</p>';
-  const body = panel('Memory', intro + extra + (ents.length ? '<input class="search" id="entQ" placeholder="Search names, places, events" aria-label="Search memory"><div id="entL"></div>' : ''), '#memBtn');
+  const body = panel('Memory', intro + seriesNote() + extra + (ents.length ? '<input class="search" id="entQ" placeholder="Search names, places, events" aria-label="Search memory"><div id="entL"></div>' : ''), '#memBtn');
   if (!ents.length) return;
   const draw = q => {
     const L = $('#entL'); L.innerHTML = '';
@@ -2117,6 +2260,7 @@ $('#memBtn').onclick = () => {
       L.appendChild(sec);
     }
   };
+  document.querySelectorAll('[data-finish]').forEach(x => x.onclick = () => finishMemory(x.dataset.finish));
   draw('');
   $('#entQ').oninput = e => draw(e.target.value.trim().toLowerCase());
 };
@@ -2334,7 +2478,7 @@ async function askBook(q, out){
     let excerpts = '', used = 0;
     for (const c of top){ const piece = `[p. ${c.page}] ${c.t.slice(0, 900)}\n\n`; if (used + piece.length > 14000) break; excerpts += piece; used += piece.length; }
     const notes = book.entities.filter(en => en.firstPage <= askedAt && terms.some(w => en.name.toLowerCase().includes(w) || [...en.aliases].some(a => a.toLowerCase().includes(w))))
-      .slice(0, 8).map(en => `${en.name} (${en.type})${en.description && en.descPage <= askedAt ? ': ' + en.description : ''} ${en.facts.filter(f => f.page <= askedAt).map(f => `p.${f.page}: ${f.text}`).join(' ')}`).join('\n');
+      .slice(0, 8).map(en => `${en.name} (${en.type})${en.description && en.descPage <= askedAt ? ': ' + en.description : ''} ${en.facts.filter(f => f.page <= askedAt).map(f => `${f.book ? f.book + ' (earlier book)' : 'p.' + f.page}: ${f.text}`).join(' ')}`).join('\n');
     if (!excerpts && !notes){ out.innerHTML = `<p class="muted">Nothing about that has come up in pages 1–${askedAt} yet.</p>`; return; }
     const r = await sample(`A reader of the book "${book.title}" is on page ${askedAt} and asks: "${q}"
 Answer using ONLY the excerpts and notes below. They all come from pages 1–${askedAt}.
@@ -2539,7 +2683,7 @@ function openCard(id){
     <div class="muted" style="margin-top:-8px;font-size:14px">${label} · first appears on page ${en.firstPage}${aliases.length ? ' · also called ' + esc(aliases.join(', ')) : ''}</div>
     <div class="shield">${svgI('lock')}<span><strong>Spoiler shield on.</strong> Only what you’ve read, through page ${P}.</span></div>
     ${en.description && en.descPage <= P ? `<div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">Who or what</h3><p class="desc">${esc(en.description)}</p></div>` : ''}
-    <div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">So far</h3><div class="facts">${facts.map(f => `<div class="fact"><button data-pg="${f.page}" aria-label="Go to page ${f.page}">p. ${f.page}</button><span>${esc(f.text)}</span></div>`).join('') || '<span class="muted">No notes yet.</span>'}</div></div>
+    <div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">So far</h3><div class="facts">${facts.map(f => f.book ? `<div class="fact"><span class="fbk">${esc(f.book)}</span><span>${esc(f.text)}</span></div>` : `<div class="fact"><button data-pg="${f.page}" aria-label="Go to page ${f.page}">p. ${f.page}</button><span>${esc(f.text)}</span></div>`).join('') || '<span class="muted">No notes yet.</span>'}</div></div>
     ${facts.length >= 3 && aiReady() ? `<div style="display:flex;flex-direction:column;gap:8px"><button class="btn" id="recapBtn" style="align-self:flex-start">Catch me up</button><p class="desc" id="recapT" hidden></p></div>` : ''}
     ${settings.castOn && en.type === 'character' && 'speechSynthesis' in window ? `<div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">Voice</h3><div class="seg" style="flex-wrap:wrap"><select id="cvSel" aria-label="Voice for ${esc(en.name)}" style="height:44px;border:1px solid var(--line);border-radius:10px;padding:0 8px;max-width:100%">${englishVoices().map(v => `<option value="${esc(v.voiceURI)}">${esc(v.name.replace(/^Microsoft /, '').replace(/ - .*$/, ''))}</option>`).join('')}</select><select id="cvPitch" aria-label="Pitch" style="height:44px;border:1px solid var(--line);border-radius:10px;padding:0 8px"><option value="0.8">Lower</option><option value="1">Normal</option><option value="1.2">Higher</option></select><button class="btn small" id="cvPlay">${svgI('speak').replace('<svg', '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"')}Hear it</button></div></div>` : ''}
     ${KIND[en.type] && (refAllowed(en) || book.portraits[en.name]) ? `<div style="display:flex;flex-direction:column;gap:8px"><h3 class="h3">${KIND[en.type].ref}</h3>${book.portraits[en.name] ? `<img src="${book.portraits[en.name]}" alt="${KIND[en.type].ref} of ${esc(en.name)}" style="width:160px;border-radius:12px;border:1px solid var(--line)">` : `<div class="muted" style="font-size:14px">No ${KIND[en.type].ref.toLowerCase()} yet. One is drawn the first time ${esc(en.name)} appears in a ChatGPT picture.</div>`}<div class="seg" style="flex-wrap:wrap">${settings.oaKey ? `<button class="btn small" id="porDraw">${book.portraits[en.name] ? 'Redraw' : 'Draw it now'}</button>` : ''}<button class="btn small" id="porUp">Upload my own</button>${book.portraits[en.name] ? '<button class="btn small" id="porDel">Remove</button>' : ''}</div>${book.portraits[en.name] ? `<label class="switch" style="font-size:15px"><input type="checkbox" id="porUse"${(book.refOff || {})[en.name] ? '' : ' checked'}${refAllowed(en) ? '' : ' disabled'}> Use in pictures</label><div class="muted" style="font-size:13px;margin-top:-4px">${refAllowed(en) ? `Turning this off keeps the picture saved here. Pictures use the written look instead.` : `${KIND[en.type].ref}s are off in Settings, so pictures use the written look. This one stays saved.`}</div>` : ''}<div class="seg" style="align-items:center;flex-wrap:wrap"><label for="porWho" style="font-size:14px">Use it for ${esc(en.name)}:</label><select id="porWho" style="height:40px;border:1px solid var(--line);border-radius:10px;padding:0 8px"><option value="">Automatic (${isMain(en) && !(book.mainOverride || {})[en.name] ? KIND[en.type].key + ', yes' : ((book.mainOverride || {})[en.name] ? KIND[en.type].key : 'not a ' + KIND[en.type].key + ' yet')})</option><option value="yes"${(book.mainOverride || {})[en.name] === 'yes' ? ' selected' : ''}>Always</option><option value="no"${(book.mainOverride || {})[en.name] === 'no' ? ' selected' : ''}>Never</option></select></div><div class="muted" style="font-size:13px">${(book.refOff || {})[en.name] || !refAllowed(en) ? `Not used in pictures right now.` : (en.type === 'character' && settings.portraitScope === 'all') || isMain(en) ? `Pictures with ${esc(en.name)} are guided by this.` : `${esc(en.name)} isn’t a ${KIND[en.type].key}, so pictures use the written look below.`}</div></div>` : ''}
@@ -2572,7 +2716,7 @@ function openCard(id){
     if (recapCache.has(key)){ out.hidden = false; out.textContent = recapCache.get(key); return; }
     rb.disabled = true; rb.textContent = 'Thinking…';
     try {
-      const r = await sample(`Write a 2–3 sentence recap of "${en.name}" for someone reading "${book.title}". Use ONLY these notes from what they have read so far. Add nothing else, even if you know the book.\n\n${en.description ? 'Intro: ' + en.description + '\n' : ''}${facts.map(f => `p.${f.page}: ${f.text}`).join('\n')}\n\nReply with just the recap.`, {modelTier: 'quick'});
+      const r = await sample(`Write a 2–3 sentence recap of "${en.name}" for someone reading "${book.title}". Use ONLY these notes from what they have read so far. Add nothing else, even if you know the book.\n\n${en.description ? 'Intro: ' + en.description + '\n' : ''}${facts.map(f => `${f.book ? f.book + ' (earlier book)' : 'p.' + f.page}: ${f.text}`).join('\n')}\n\nReply with just the recap.`, {modelTier: 'quick'});
       const t = String((r && r.text) || '').trim(); recapCache.set(key, t);
       if (out.isConnected){ out.hidden = false; out.textContent = t; rb.remove(); }
     } catch(e){ aiError(e); if (rb.isConnected){ rb.disabled = false; rb.textContent = 'Catch me up'; } toast('Couldn’t write a recap right now'); }
