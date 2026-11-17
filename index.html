@@ -1099,7 +1099,7 @@ function visibleEntities(){ return book.entities.filter(en => en.firstPage <= P)
 function entityMatcher(ents){
   const map = new Map();
   for (const en of ents){
-    for (const n of [en.name, ...en.aliases]){
+    for (const n of namesOf(en)){
       if (!n || n.length < 3 || !/^\p{Lu}/u.test(n) || /^(The|A|An|He|She|It|They|His|Her)$/.test(n)) continue;
       if (!map.has(n)) map.set(n, en.id);
     }
@@ -1531,8 +1531,8 @@ async function openaiPicture(t, allowNone){
   const cast = castText(t, p);
   const lk = looksBlock(cast, t.page);
   const refs = await portraitRefs(cast, t.page);
-  const refNote = refs.length ? '\n\nREFERENCE IMAGES: ' + refs.map((x, i) => `image ${i + 1} is ${x.name}${x.type && x.type !== 'character' ? ' (' + x.type + ')' : ''}`).join('; ') + '. Keep each person\'s face, hair, build and clothing, and each place or object, exactly as in its reference image. Only the pose, expression, camera angle and scene change.' : '';
-  return await openaiImage(p.slice(0, 2400) + (lk ? '\n\nCHARACTER LOOKS. Draw each person exactly like this, matching every earlier picture:\n' + lk : '') + refNote, null, refs);
+  const refNote = refs.length ? '\n\nREFERENCE IMAGES: ' + refs.map((x, i) => `image ${i + 1} is ${x.name}${x.type && x.type !== 'character' ? ' (' + x.type + ')' : ''}`).join('; ') + '. Keep each person\'s face, hair, build and clothing, and each place or object, exactly as in its reference image. Only the pose, expression, camera angle and scene change. Each look and reference belongs ONLY to the person it names. Never give anyone else that person’s hair color, streaks, scars, eye color or clothing; everyone else must look clearly different.' : '';
+  return await openaiImage(p.slice(0, 2400) + (lk ? '\n\nCHARACTER LOOKS. Draw each person exactly like this, matching every earlier picture. Each look belongs ONLY to the person it names. Never give anyone else that person’s hair color, streaks, scars, eye color or clothing; everyone else must look clearly different.\n' + lk : '') + refNote, null, refs);
 }
 const ART_RULES = `Rules:
 - Reply with only a single <svg> element. No markdown fences, no commentary.
@@ -1543,7 +1543,7 @@ const ART_RULES = `Rules:
 - Keep it under about 10,000 characters.
 - Show only what the text describes. Never add anything from later in the book, even if you recognize the book.`;
 function knownFor(text, page){
-  return visibleEntities().filter(en => en.firstPage <= page && (en.type === 'character' || en.type === 'place') && [en.name, ...en.aliases].some(n => n && text.includes(n))).slice(0, 8)
+  return visibleEntities().filter(en => en.firstPage <= page && (en.type === 'character' || en.type === 'place') && mentioned(text, en)).slice(0, 8)
     .map(en => `- ${en.name} (${en.type}): ${lookLine(en) ? 'LOOKS EXACTLY LIKE THIS, NEVER CHANGE IT: ' + lookLine(en) : (en.description || '')}`).join('\n');
 }
 let shown = null; // {url, svg, name}
@@ -1626,7 +1626,7 @@ async function redrawWithChanges(part, change, mode, base){
       const cast = castText({key: part ? part.id : 'p' + page, text}, null);
       const lk = looksBlock(cast, page);
       const refs = await portraitRefs(cast, page);
-      const lookPart = lk ? '\n\nCHARACTER LOOKS. Draw each person exactly like this:\n' + lk : '';
+      const lookPart = lk ? '\n\nCHARACTER LOOKS. Draw each person exactly like this. Each look belongs ONLY to the person it names. Never give anyone else that person’s hair color, streaks, scars, eye color or clothing; everyone else must look clearly different.\n' + lk : '';
       if (mode === 'edit' && (base.img || base.svg)){
         const cur = base.img || await blobToDataUrl(await svgToPng(base.svg));
         const refNote = refs.length ? '\n\nThe other images are references: ' + refs.map((x, i) => `image ${i + 2} is ${x.name}${x.type && x.type !== 'character' ? ' (' + x.type + ')' : ''}`).join('; ') + '. Keep each person, place and object looking like its reference.' : '';
@@ -1636,7 +1636,7 @@ Keep everything else the same: the composition, setting, lighting, art style and
         const key = part ? part.id : 'p' + page;
         let scene = promptCache.get(key); if (!scene || scene === 'NONE') scene = await writeImagePrompt({kind: part ? 'part' : 'page', part, key, text, page}, false);
         if (scene === 'NONE') scene = text.slice(0, 1200);
-        const refNote = refs.length ? '\n\nREFERENCE IMAGES: ' + refs.map((x, i) => `image ${i + 1} is ${x.name}${x.type && x.type !== 'character' ? ' (' + x.type + ')' : ''}`).join('; ') + '. Keep each person\'s face, hair, build and clothing, and each place or object, exactly as in its reference image.' : '';
+        const refNote = refs.length ? '\n\nREFERENCE IMAGES: ' + refs.map((x, i) => `image ${i + 1} is ${x.name}${x.type && x.type !== 'character' ? ' (' + x.type + ')' : ''}`).join('; ') + '. Keep each person\'s face, hair, build and clothing, and each place or object, exactly as in its reference image. Each look and reference belongs ONLY to the person it names. Never give anyone else that person’s hair color, streaks, scars, eye color or clothing; everyone else must look clearly different.' : '';
         out = await openaiImage(String(scene).slice(0, 2200) + `\n\nTHE READER ASKED FOR THESE CHANGES, follow them exactly: ${change}` + lookPart + refNote, null, refs);
       }
     } else {
@@ -2000,6 +2000,59 @@ function cleanSvg(raw){
   return out;
 }
 
+/* ---------- matching names in the text ---------- */
+// Nicknames like "the captain", "Lord" or a family name shared by two people can't tell characters apart,
+// so they are never used to find someone on a page or to merge two memory entries.
+const TITLE_W = /^(the|a|an|of|lord|lady|sir|dame|king|queen|prince|princess|captain|commander|general|master|mistress|mr|mrs|ms|miss|dr|doctor|father|mother|brother|sister|uncle|aunt|old|young|little|big|my|our|his|her|their)\.?$/i;
+function goodAlias(a){
+  a = String(a || '').trim();
+  if (a.length < 3 || !/^\p{Lu}/u.test(a) || /^(the|a|an)\s/i.test(a)) return false;
+  return !a.split(/\s+/).every(w => TITLE_W.test(w));
+}
+const wordsOf = s => String(s).toLowerCase().split(/[\s.,'’-]+/).filter(w => w && !TITLE_W.test(w));
+// Aliases claimed by two people whose names aren't the same person (e.g. "Dorran" for Kael Dorran and Bren Dorran).
+function ambiguousAliases(items){
+  const claims = new Map();
+  const claim = (k, owner) => { if (!claims.has(k)) claims.set(k, new Set()); claims.get(k).add(owner); };
+  items.forEach(x => {
+    const own = String(x.name).toLowerCase();
+    claim(own, own);
+    (x.aliases || []).forEach(a => claim(String(a).toLowerCase(), own));
+    const w = wordsOf(x.name); if (w.length > 1) w.forEach(t => t.length >= 3 && claim(t, own));
+  });
+  const same = (a, b) => { const A = wordsOf(a), B = wordsOf(b); return A.every(t => B.includes(t)) || B.every(t => A.includes(t)); };
+  const out = new Set();
+  claims.forEach((owners, k) => { const o = [...owners]; if (o.some((a, i) => o.slice(i + 1).some(b => !same(a, b)))) out.add(k); });
+  return out;
+}
+const mergeKeys = (name, aliases, ambig) => [String(name), ...[...(aliases || [])].filter(a => goodAlias(a) && !ambig.has(String(a).toLowerCase()))].map(k => String(k).toLowerCase());
+function namesOf(en){
+  const amb = (book && book.ambig) || new Set();
+  return [en.name, ...[...en.aliases].filter(a => goodAlias(a) && !amb.has(a.toLowerCase()))].filter(n => n && n.length >= 3);
+}
+const nameRes = new Map();
+function mentions(text, n){
+  let re = nameRes.get(n);
+  if (!re){ re = new RegExp('(?<![\\p{L}\\p{N}])' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\p{L}\\p{N}])', 'u'); nameRes.set(n, re); }
+  return re.test(text);
+}
+// A one-word nickname that is also an everyday word in this book ("Red", "Wolf") only counts mid-sentence,
+// where the capital letter shows it's a name, not at the start of a sentence.
+const commonCache = new Map();
+function everydayWord(n){
+  if (/\s/.test(n) || !book) return false;
+  const k = book.id + '|' + n; if (commonCache.has(k)) return commonCache.get(k);
+  const re = new RegExp('(?<![\\p{L}])' + n.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\p{L}])', 'u');
+  let hits = 0; for (const pg of book.pages){ for (const t of pg){ if (re.test(t) && ++hits >= 2) break; } if (hits >= 2) break; }
+  commonCache.set(k, hits >= 2); return hits >= 2;
+}
+const midRes = new Map();
+function midSentence(text, n){
+  const re = midRes.get(n) || midRes.set(n, new RegExp('(?<!^\\s*)(?<![.!?…"“”‘’:;(\\[—–-]\\s*)(?<![\\p{L}\\p{N}])' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\p{L}\\p{N}])', 'u')).get(n);
+  return re.test(text);
+}
+const mentioned = (text, en) => namesOf(en).some(n => n !== en.name && everydayWord(n) ? midSentence(text, n) : mentions(text, n));
+
 /* ---------- series: earlier books' memory carries into the next book ---------- */
 const seriesKey = s => s && s.name ? s.name.trim().toLowerCase() : '';
 const bookLabel = b => b.series && b.series.num != null ? `Book ${fmtNum(b.series.num)}` : b.title;
@@ -2007,11 +2060,12 @@ function fmtNum(n){ return Number.isInteger(n) ? String(n) : String(Math.round(n
 // Turn saved memory chunks into a list of people, places and things (no spoiler limit: used for whole earlier books).
 function entitiesFromCodex(chunks, numPages){
   const list = [], byKey = new Map();
+  const ambig = ambiguousAliases(chunks.flatMap(c => (c.entities || []).filter(x => x && x.name)));
   for (const c of [...chunks].sort((a, b) => a.idx - b.idx)){
     const from = c.idx * CHUNK + 1, to = Math.min(numPages, from + CHUNK - 1);
     for (const x of (c.entities || [])){
       if (!x || !x.name) continue;
-      const keys = [x.name, ...(x.aliases || [])].filter(Boolean).map(k => String(k).toLowerCase());
+      const keys = mergeKeys(x.name, x.aliases, ambig);
       let en = keys.map(k => byKey.get(k)).find(Boolean);
       if (!en){ en = {name: String(x.name), type: x.type || 'thing', aliases: new Set(), description: '', facts: []}; list.push(en); }
       (x.aliases || []).forEach(a => { if (a && a !== en.name) en.aliases.add(String(a)); });
@@ -2042,7 +2096,7 @@ async function loadSeriesMemory(meta){
     const built = new Set(cx.map(c => c.idx)); let covered = 0; while (built.has(Math.floor(covered / CHUNK)) && covered < b.numPages) covered = Math.min(b.numPages, (Math.floor(covered / CHUNK) + 1) * CHUNK);
     book.priorBooks.push({id: b.id, title: b.title, label, numPages: b.numPages, covered});
     for (const x of entitiesFromCodex(cx, b.numPages)){
-      const keys = [x.name, ...x.aliases].map(s => s.toLowerCase());
+      const keys = mergeKeys(x.name, x.aliases, ambiguousAliases(book.prior.map(p => ({name: p.name, aliases: [...p.aliases]})).concat([{name: x.name, aliases: [...x.aliases]}])));
       let en = keys.map(k => byKey.get(k)).find(Boolean);
       if (!en){ en = {name: x.name, type: x.type, aliases: new Set(), description: '', facts: []}; book.prior.push(en); }
       x.aliases.forEach(a => a !== en.name && en.aliases.add(a));
@@ -2066,10 +2120,11 @@ async function loadSeriesMemory(meta){
 // Add what earlier books know to this book's memory list.
 function mergePrior(list){
   if (!book.prior || !book.prior.length) return list;
-  const byKey = new Map(); list.forEach(en => [en.name, ...en.aliases].forEach(k => byKey.set(k.toLowerCase(), en)));
+  const amb = book.ambig || new Set();
+  const byKey = new Map(); list.forEach(en => mergeKeys(en.name, en.aliases, amb).forEach(k => byKey.set(k, en)));
   for (const p of book.prior){
-    let en = [p.name, ...p.aliases].map(k => byKey.get(k.toLowerCase())).find(Boolean);
-    if (!en){ en = {id: slug(p.name), name: p.name, type: p.type, aliases: new Set(), description: '', descPage: Infinity, facts: [], firstPage: 0}; list.push(en); [p.name, ...p.aliases].forEach(k => byKey.set(k.toLowerCase(), en)); }
+    let en = mergeKeys(p.name, p.aliases, amb).map(k => byKey.get(k)).find(Boolean);
+    if (!en){ en = {id: slug(p.name), name: p.name, type: p.type, aliases: new Set(), description: '', descPage: Infinity, facts: [], firstPage: 0}; list.push(en); mergeKeys(p.name, p.aliases, amb).forEach(k => byKey.set(k, en)); }
     p.aliases.forEach(a => a !== en.name && en.aliases.add(a));
     en.facts = [...p.facts, ...en.facts.filter(f => !f.book)];
     if (p.description && (!en.description || en.descPage > 0)){ en.priorDesc = p.description; if (!en.description){ en.description = p.description; en.descPage = 0; } }
@@ -2142,11 +2197,13 @@ function slug(s){ return 'e_' + String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-
 function rebuildEntities(){
   const list = [], byKey = new Map();
   const chunks = [...book.codex.values()].sort((a,b) => a.idx - b.idx);
+  const ambig = ambiguousAliases([...chunks.flatMap(c => (c.entities || []).filter(x => x && x.name)), ...(book.prior || []).map(p => ({name: p.name, aliases: [...p.aliases]}))]);
+  book.ambig = ambig;
   for (const c of chunks){
     const from = c.idx * CHUNK + 1, to = Math.min(book.numPages, from + CHUNK - 1);
     for (const x of (c.entities || [])){
       if (!x || !x.name) continue;
-      const keys = [x.name, ...(x.aliases || [])].filter(Boolean).map(k => String(k).toLowerCase());
+      const keys = mergeKeys(x.name, x.aliases, ambig);
       let en = keys.map(k => byKey.get(k)).find(Boolean);
       if (!en){ en = {id: slug(x.name), name: String(x.name), type: x.type || 'thing', aliases: new Set(), description: '', descPage: Infinity, facts: [], firstPage: Infinity}; list.push(en); }
       (x.aliases || []).forEach(a => { if (a && a !== en.name) en.aliases.add(String(a)); });
@@ -2516,30 +2573,30 @@ const LOOK_KW = /\b(hair|haired|eyes?|eyed|beard|bearded|mustache|moustache|skin
 const KIND = {character: {ref: 'Portrait', key: 'main character'}, place: {ref: 'Reference picture', key: 'key place'}, thing: {ref: 'Reference picture', key: 'key item'}};
 function refTypes(){ return ['character', ...(settings.refPlaces ? ['place'] : []), ...(settings.refThings ? ['thing'] : [])]; }
 function refAllowed(en){ return !!settings.portraits && refTypes().includes(en.type); }
-function entsIn(text, page, types){ return book.entities.filter(en => types.includes(en.type) && en.firstPage <= page && [en.name, ...en.aliases].some(n => n && n.length >= 3 && text.includes(n))); }
+function entsIn(text, page, types){ return book.entities.filter(en => types.includes(en.type) && en.firstPage <= page && mentioned(text, en)); }
 function keyExtrasIn(text, page){ const t = refTypes().filter(x => x !== 'character'); return t.length ? entsIn(text, page, t).filter(en => isMain(en)).slice(0, 2) : []; }
 function charsIn(text, page){
-  return book.entities.filter(en => en.type === 'character' && en.firstPage <= page && [en.name, ...en.aliases].some(n => n && n.length >= 3 && text.includes(n))).slice(0, 6);
+  return book.entities.filter(en => en.type === 'character' && en.firstPage <= page && mentioned(text, en)).slice(0, 6);
 }
 function lookLine(en){ const lk = book.looks && book.looks[en.name]; return lk && lk.text ? lk.text : ''; }
 function looksBlock(text, page){
   return [...charsIn(text, page), ...keyExtrasIn(text, page)].map(en => lookLine(en) ? `${en.name}${en.type !== 'character' ? ' (' + en.type + ')' : ''}: ${lookLine(en)}` : '').filter(Boolean).join('\n');
 }
 const saveLooks = debounce(async () => { if (db && book) try { await bref().update({looks: book.looks}); } catch(e){} }, 600);
-const LOOK_V = 2;
+const LOOK_V = 3;
 const LOOK_KW_G = new RegExp(LOOK_KW.source, 'gi');
 const lookScore = t => (t.match(LOOK_KW_G) || []).length;
 // Every passage up to this page that could describe how this entity looks: paragraphs naming it,
 // plus the next couple of paragraphs, which often describe them as "he" or "she".
 function lookCandidates(en, page, fromPage){
-  const names = [en.name, ...en.aliases].filter(n => n && n.length >= 3);
+  const names = namesOf(en);
   const out = [];
   for (let pg = fromPage || 1; pg <= page; pg++){
     const ps = book.pages[pg - 1] || [];
     ps.forEach((t, i) => {
-      if (!names.some(n => t.includes(n))) return;
+      if (!names.some(n => mentions(t, n))) return;
       out.push({pg, i, t, sc: lookScore(t) * 2 + 1, near: false});
-      for (let j = i + 1; j <= i + 2 && j < ps.length; j++){ if (names.some(n => ps[j].includes(n))) break; const sc = lookScore(ps[j]); if (sc) out.push({pg, i: j, t: ps[j], sc, near: true}); }
+      for (let j = i + 1; j <= i + 2 && j < ps.length; j++){ if (names.some(n => mentions(ps[j], n)) || book.entities.some(o => o !== en && o.type === 'character' && mentioned(ps[j], o))) break; const sc = lookScore(ps[j]); if (sc) out.push({pg, i: j, t: ps[j], sc, near: true}); }
     });
   }
   const seen = new Set(); return out.filter(x => { const k = x.pg + ':' + x.i; if (seen.has(k)) return false; seen.add(k); return true; });
@@ -2598,7 +2655,7 @@ Reply with JSON only:
 function lookStale(en, page){
   const lk = book.looks[en.name];
   if (!lk || lk.edited) return false;
-  if ((lk.v || 1) < LOOK_V) return true;
+  if ((lk.v || 1) < LOOK_V && !lk.from) return true;
   if (!(lk.guessed || []).length || page - (lk.page || 0) < 3) return false;
   return lookCandidates(en, page, (lk.page || 0) + 1).some(x => x.sc >= 2);
 }
@@ -2640,7 +2697,7 @@ function mentionCounts(){
   if (mainCache.bid !== book.id || Math.abs(mainCache.upTo - P) > 5 || !mainCache.counts){
     const chars = book.entities.filter(en => ['character', 'place', 'thing'].includes(en.type) && en.firstPage <= P);
     const counts = new Map(chars.map(en => [en.name, 0]));
-    for (let pg = 1; pg <= P; pg++) (book.pages[pg - 1] || []).forEach(t => { for (const en of chars){ if ([en.name, ...en.aliases].some(n => n && n.length >= 3 && t.includes(n))) counts.set(en.name, counts.get(en.name) + 1); } });
+    for (let pg = 1; pg <= P; pg++) (book.pages[pg - 1] || []).forEach(t => { for (const en of chars){ if (mentioned(t, en)) counts.set(en.name, counts.get(en.name) + 1); } });
     mainCache = {bid: book.id, upTo: P, counts};
   }
   return mainCache.counts;
